@@ -19,7 +19,13 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"github.com/go-logr/zapr"
+	"github.com/pkg/errors"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"k8s.io/klog/v2"
 	"os"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -30,7 +36,6 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -58,7 +63,9 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var logLevel, logFormat string
 	var tlsOpts []func(*tls.Config)
+	var managerNamespace string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -69,13 +76,25 @@ func main() {
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	opts := zap.Options{
-		Development: true,
-	}
-	opts.BindFlags(flag.CommandLine)
+	flag.StringVar(&logLevel, "log-level", "info", "The log level to output and above")
+	flag.StringVar(&logFormat, "log-format", "json", "The log format (json, console)")
+	flag.StringVar(&managerNamespace, "namespace", os.Getenv("POD_NAMESPACE"), "The namespace to use for creating pods, defaults to env 'POD_NAMESPACE' else default")
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	if managerNamespace == "" {
+		managerNamespace = "default"
+	}
+
+	l, err := getLogger(logLevel, logFormat)
+	if err != nil {
+		setupLog.Error(err, "Failed to create logger")
+		os.Exit(1)
+	}
+	zap.ReplaceGlobals(l)
+	klog.ClearLogger()
+	klog.SetLogger(zapr.NewLogger(l.Named("kubeclient")))
+	log.SetLogger(zapr.NewLogger(l))
+	ctrl.SetLogger(zapr.NewLogger(l))
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -175,8 +194,10 @@ func main() {
 	ctx := ctrl.SetupSignalHandler()
 
 	drainer := &controller.Drainer{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		RestConfig: mgr.GetConfig(),
+		NameSpace:  managerNamespace,
 	}
 	go drainer.Start(ctx)
 
@@ -186,4 +207,37 @@ func main() {
 		os.Exit(1)
 	}
 
+}
+
+func getLogger(logLevel, logFormat string) (*zap.Logger, error) {
+	level, err := zap.ParseAtomicLevel(logLevel)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse log level")
+	}
+
+	disableStackTrace := true
+	encoderConfig := zap.NewProductionEncoderConfig()
+
+	if logFormat == "json" {
+		disableStackTrace = false
+	}
+	if logFormat == "console" {
+		encoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	}
+
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	loggerConfig := zap.Config{
+		Level:             level,
+		Encoding:          logFormat,
+		EncoderConfig:     encoderConfig,
+		OutputPaths:       []string{"stdout"},
+		ErrorOutputPaths:  []string{"stderr"},
+		DisableStacktrace: disableStackTrace,
+	}
+
+	logger, err := loggerConfig.Build()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to build logger")
+	}
+	return logger, nil
 }

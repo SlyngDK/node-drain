@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	v1 "github.com/slyngdk/node-drain/api/v1"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,7 +13,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"strings"
 	"time"
 )
@@ -27,10 +27,10 @@ type KubeNodeReconciler struct {
 	Recorder record.EventRecorder
 }
 
-// +kubebuilder:rbac:resources=node,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
 
 func (r *KubeNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	l := log.FromContext(ctx)
+	l := zap.S().Named("kubenode")
 
 	l.Info("kube node reconcile", "request", req)
 

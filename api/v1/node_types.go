@@ -41,15 +41,17 @@ type NodeStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	RebootRequired bool            `json:"rebootRequired"`
-	Status         NodeDrainStatus `json:"status,omitempty"`
-	StatusChanged  string          `json:"statusChanged,omitempty"`
+	RebootRequiredLastChecked *metav1.Time    `json:"rebootRequiredLastChecked,omitempty"`
+	RebootRequired            bool            `json:"rebootRequired"`
+	Status                    NodeDrainStatus `json:"status,omitempty"`
+	StatusChanged             *metav1.Time    `json:"statusChanged,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
 //+kubebuilder:printcolumn:name="Reboot Required",type="boolean",JSONPath=".status.rebootRequired"
+//+kubebuilder:printcolumn:name="Reboot Required Last Checked",type="string",JSONPath=".status.rebootRequiredLastChecked"
 //+kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status"
 
 // Node is the Schema for the nodes API

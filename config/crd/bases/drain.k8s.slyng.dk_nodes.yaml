@@ -18,6 +18,9 @@ spec:
     - jsonPath: .status.rebootRequired
       name: Reboot Required
       type: boolean
+    - jsonPath: .status.rebootRequiredLastChecked
+      name: Reboot Required Last Checked
+      type: string
     - jsonPath: .status.status
       name: Status
       type: string
@@ -51,9 +54,13 @@ spec:
             properties:
               rebootRequired:
                 type: boolean
+              rebootRequiredLastChecked:
+                format: date-time
+                type: string
               status:
                 type: string
               statusChanged:
+                format: date-time
                 type: string
             required:
             - rebootRequired
