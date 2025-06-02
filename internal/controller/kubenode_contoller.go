@@ -107,7 +107,8 @@ func (r *KubeNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 				if nodeCRD.Status.Status == "" {
 					nodeCRD.Status.Status = v1.NodeDrainStatusQueued
-					nodeCRD.Status.StatusChanged = time.Now().Format(time.RFC3339)
+					//FIXME
+					//nodeCRD.Status.StatusChanged = time.Now().Format(time.RFC3339)
 					if err := r.Status().Update(ctx, nodeCRD); err != nil {
 						return ctrl.Result{}, err
 					}

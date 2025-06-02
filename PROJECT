@@ -5,6 +5,9 @@
 domain: k8s.slyng.dk
 layout:
 - go.kubebuilder.io/v4
+- helm.kubebuilder.io/v1-alpha
+plugins:
+  helm.kubebuilder.io/v1-alpha: {}
 projectName: nodedrain
 repo: github.com/slyngdk/node-drain
 resources:
