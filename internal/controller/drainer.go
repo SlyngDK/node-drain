@@ -2,15 +2,22 @@ package controller
 
 import (
 	"context"
+	"github.com/google/uuid"
 	v1 "github.com/slyngdk/node-drain/api/v1"
 	"github.com/slyngdk/node-drain/internal/utils"
+	ffclient "github.com/thomaspoignant/go-feature-flag"
+	"github.com/thomaspoignant/go-feature-flag/ffcontext"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"time"
 )
+
+var _ manager.Runnable = (*Drainer)(nil)
+var _ manager.LeaderElectionRunnable = (*Drainer)(nil)
 
 type Drainer struct {
 	client.Client
@@ -19,9 +26,13 @@ type Drainer struct {
 	NameSpace  string
 }
 
+func (d *Drainer) NeedLeaderElection() bool {
+	return true
+}
+
 //+kubebuilder:rbac:groups="",namespace=$(SERVICE_NAMESPACE),resources=pods,verbs=list;watch;create;get;delete;deletecollection
 
-func (d *Drainer) Start(ctx context.Context) {
+func (d *Drainer) Start(ctx context.Context) error {
 	l := zap.S().Named("drainer")
 
 	rebootManager, err := utils.NewRebootManager(l.Desugar(), d.Client, d.RestConfig, d.NameSpace)
@@ -29,8 +40,20 @@ func (d *Drainer) Start(ctx context.Context) {
 		l.Fatal("Failed to create reboot manager", zap.Error(err))
 	}
 
-	drainTicker := time.NewTicker(20 * time.Second) //FIXME
-	checkTicker := time.NewTicker(20 * time.Second) //FIXME
+	drainTickerInterval, err := getDurationVariation("drainer.drainCheckInterval", "20s")
+	if err != nil {
+		l.Error("Failed to get 'drainer.drainCheckInterval'", zap.Error(err))
+		drainTickerInterval = 20 * time.Second
+	}
+	drainTicker := time.NewTicker(drainTickerInterval)
+
+	drainRebootCheckInterval, err := getDurationVariation("drainer.rebootCheckInterval", "6h")
+	if err != nil {
+		l.Error("Failed to get 'drainer.rebootCheckInterval'", zap.Error(err))
+		drainTickerInterval = 6 * time.Hour
+	}
+	rebootCheckTicker := time.NewTicker(drainRebootCheckInterval)
+
 	go func() {
 		for {
 			select {
@@ -61,7 +84,7 @@ func (d *Drainer) Start(ctx context.Context) {
 					continue
 				}
 
-			case <-checkTicker.C:
+			case <-rebootCheckTicker.C:
 
 				nodes := &v1.NodeList{}
 				err := d.List(ctx, nodes)
@@ -83,8 +106,7 @@ func (d *Drainer) Start(ctx context.Context) {
 							l.Error(err, "Failed to check if reboot is required")
 							continue
 						}
-						now := metav1.Now()
-						n.Status.RebootRequiredLastChecked = &now
+						n.Status.RebootRequiredLastChecked = utils.PtrTo(metav1.Now())
 						n.Status.RebootRequired = rebootRequired
 						if err := d.Status().Update(ctx, &n); err != nil {
 							l.Error(err, "Failed to update node status")
@@ -95,10 +117,13 @@ func (d *Drainer) Start(ctx context.Context) {
 
 			case <-ctx.Done():
 				drainTicker.Stop()
+				rebootCheckTicker.Stop()
 				return
 			}
 		}
 	}()
+
+	return nil
 }
 
 func getActiveNode(nodes *v1.NodeList) *v1.Node {
@@ -119,4 +144,9 @@ func getNextNode(nodes *v1.NodeList) *v1.Node {
 		}
 	}
 	return nil
+}
+
+func getDurationVariation(flagKey string, defaultDuration string) (time.Duration, error) {
+	variation, _ := ffclient.StringVariation(flagKey, ffcontext.NewEvaluationContext(uuid.NewString()), defaultDuration)
+	return time.ParseDuration(variation)
 }

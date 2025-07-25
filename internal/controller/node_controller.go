@@ -18,23 +18,48 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"github.com/google/uuid"
 	drainv1 "github.com/slyngdk/node-drain/api/v1"
+	mod "github.com/slyngdk/node-drain/internal/modules"
+	"github.com/slyngdk/node-drain/internal/utils"
+	ffclient "github.com/thomaspoignant/go-feature-flag"
+	"github.com/thomaspoignant/go-feature-flag/ffcontext"
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // NodeReconciler reconciles a Node object
-type NodeReconciler struct {
+type nodeReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme       *runtime.Scheme
+	drainManager *utils.DrainManager
+}
+
+func NewNodeReconciler(client client.Client, schema *runtime.Scheme, restConfig *rest.Config, namespace string) (*nodeReconciler, error) {
+	l := zap.S().Named("node")
+	modules := make([]mod.KubernetesStateful, 0)
+
+	drainManager, err := utils.NewDrainManager(l.Desugar(), modules, client, restConfig, namespace)
+	if err != nil {
+		l.Fatal("Failed to create drain manager", zap.Error(err))
+	}
+
+	return &nodeReconciler{
+		Client:       client,
+		Scheme:       schema,
+		drainManager: drainManager,
+	}, nil
 }
 
 // +kubebuilder:rbac:groups=drain.k8s.slyng.dk,resources=nodes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=drain.k8s.slyng.dk,resources=nodes/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=drain.k8s.slyng.dk,resources=nodes/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",namespace=$(SERVICE_NAMESPACE),resources=configmaps,verbs=watch;get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -45,7 +70,7 @@ type NodeReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.0/pkg/reconcile
-func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := zap.S().Named("node")
 
 	l.Info("node reconcile", "request", req)
@@ -66,7 +91,7 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		// The object is being deleted
 		if controllerutil.ContainsFinalizer(node, nodeDrainFinalizer) {
 			// our finalizer is present, so lets handle any external dependency
-			// TODO
+			// TODO Handle if node is drained, etc ...
 
 			// remove our finalizer from the list and update it.
 			controllerutil.RemoveFinalizer(node, nodeDrainFinalizer)
@@ -79,11 +104,25 @@ func (r *NodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, nil
 	}
 
+	if node.Spec.Drain && node.Status.Status != drainv1.NodeDrainDrained {
+		ok, err := r.drainManager.IsDrainOk(ctx, node.Name)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		fmt.Printf("drain ok %s %t\n", node.Name, ok)
+
+		allFlags := ffclient.AllFlagsState(ffcontext.NewEvaluationContextBuilder(uuid.NewString()).
+			AddCustom("module", "rook").
+			AddCustom("cluster_name", "test").
+			Build())
+		fmt.Println(allFlags)
+	}
+
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *NodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *nodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&drainv1.Node{}).
 		Complete(r)

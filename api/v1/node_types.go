@@ -27,6 +27,7 @@ type NodeDrainStatus string
 
 const NodeDrainStatusQueued = "Queued"
 const NodeDrainStatusNext = "Next"
+const NodeDrainDrained = "Drained"
 
 // NodeSpec defines the desired state of Node
 type NodeSpec struct {
@@ -34,6 +35,7 @@ type NodeSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Foo is an example field of Node. Edit node_types.go to remove/update
+	Drain bool `json:"drain,omitempty"`
 }
 
 // NodeStatus defines the observed state of Node

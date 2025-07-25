@@ -17,15 +17,24 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
+	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/pkg/errors"
+	"github.com/thomaspoignant/go-feature-flag/retriever/k8sretriever"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
+	"log/slog"
 	"os"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -42,6 +51,7 @@ import (
 
 	drainv1 "github.com/slyngdk/node-drain/api/v1"
 	"github.com/slyngdk/node-drain/internal/controller"
+	ffclient "github.com/thomaspoignant/go-feature-flag"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -93,8 +103,10 @@ func main() {
 	zap.ReplaceGlobals(l)
 	klog.ClearLogger()
 	klog.SetLogger(zapr.NewLogger(l.Named("kubeclient")))
-	log.SetLogger(zapr.NewLogger(l))
-	ctrl.SetLogger(zapr.NewLogger(l))
+	logger := zapr.NewLogger(l)
+	log.SetLogger(logger)
+	ctrl.SetLogger(logger)
+	slog.SetDefault(slog.New(logr.ToSlogHandler(logger)))
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -159,14 +171,16 @@ func main() {
 		// LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		setupLog.Error(err, "unable to create new manager")
 		os.Exit(1)
 	}
 
-	if err = (&controller.NodeReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	nodeReconciler, err := controller.NewNodeReconciler(mgr.GetClient(), mgr.GetScheme(), mgr.GetConfig(), managerNamespace)
+	if err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Node")
+		os.Exit(1)
+	}
+	if err = nodeReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Node")
 		os.Exit(1)
 	}
@@ -191,7 +205,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx := ctrl.SetupSignalHandler()
+	if err = mgr.Add(loadFeatureFlags(managerNamespace, mgr)); err != nil {
+		setupLog.Error(err, "unable to add loadFeatureFlags runnable")
+		os.Exit(1)
+	}
 
 	drainer := &controller.Drainer{
 		Client:     mgr.GetClient(),
@@ -199,10 +216,14 @@ func main() {
 		RestConfig: mgr.GetConfig(),
 		NameSpace:  managerNamespace,
 	}
-	go drainer.Start(ctx)
+
+	if err = mgr.Add(drainer); err != nil {
+		setupLog.Error(err, "unable to add drainer runnable")
+		os.Exit(1)
+	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctx); err != nil {
+	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
@@ -240,4 +261,38 @@ func getLogger(logLevel, logFormat string) (*zap.Logger, error) {
 		return nil, errors.Wrap(err, "failed to build logger")
 	}
 	return logger, nil
+}
+
+func loadFeatureFlags(managerNamespace string, mgr manager.Manager) manager.Runnable {
+	return manager.RunnableFunc(func(ctx context.Context) error {
+		configMapName := "nodedrain-config" //TODO load from config/env
+
+		cm := &corev1.ConfigMap{}
+		err := mgr.GetClient().Get(ctx, types.NamespacedName{
+			Namespace: managerNamespace,
+			Name:      configMapName,
+		}, cm)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return errors.Wrap(err, "failed to get configmap")
+		}
+
+		if _, ok := cm.Data["flags.yaml"]; !ok {
+			return nil
+		}
+
+		return ffclient.Init(ffclient.Config{
+			PollingInterval: 1 * time.Hour,
+			LeveledLogger:   slog.Default(),
+			Context:         ctx,
+			Retriever: &k8sretriever.Retriever{
+				Namespace:     managerNamespace,
+				ConfigMapName: configMapName,
+				Key:           "flags.yaml",
+				ClientConfig:  *mgr.GetConfig(),
+			},
+		})
+	})
 }

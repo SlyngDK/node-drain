@@ -1,0 +1,20 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nodedrain-config
+  labels:
+    app.kubernetes.io/name: nodedrain
+    app.kubernetes.io/managed-by: kustomize
+data:
+  flags.yaml: |
+    drainer.drainCheckInterval:
+      variations:
+        default: 5m
+      defaultRule:
+        variation: default
+    drainer.rebootCheckInterval:
+      variations:
+        default: 5m
+      defaultRule:
+        variation: default

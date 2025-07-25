@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	v1 "github.com/slyngdk/node-drain/api/v1"
+	"github.com/slyngdk/node-drain/internal/utils"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -107,7 +108,7 @@ func (r *KubeNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 				if nodeCRD.Status.Status == "" {
 					nodeCRD.Status.Status = v1.NodeDrainStatusQueued
-					nodeCRD.Status.StatusChanged = time.Now().Format(time.RFC3339)
+					nodeCRD.Status.StatusChanged = utils.PtrTo(metav1.Now())
 					if err := r.Status().Update(ctx, nodeCRD); err != nil {
 						return ctrl.Result{}, err
 					}

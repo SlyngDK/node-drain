@@ -45,6 +45,7 @@ var k8sClient client.Client
 var testEnv *envtest.Environment
 var ctx context.Context
 var cancel context.CancelFunc
+var managerNamespace string = "nodedrain-system"
 
 func TestControllers(t *testing.T) {
 	RegisterFailHandler(Fail)
