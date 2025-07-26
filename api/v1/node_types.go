@@ -34,7 +34,6 @@ type NodeSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of Node. Edit node_types.go to remove/update
 	Drain bool `json:"drain,omitempty"`
 }
 
@@ -43,10 +42,21 @@ type NodeStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
+	Conditions                []Condition     `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 	RebootRequiredLastChecked *metav1.Time    `json:"rebootRequiredLastChecked,omitempty"`
 	RebootRequired            bool            `json:"rebootRequired"`
 	Status                    NodeDrainStatus `json:"status,omitempty"`
 	StatusChanged             *metav1.Time    `json:"statusChanged,omitempty"`
+}
+
+type Condition struct {
+	metav1.Condition `json:",inline"`
+
+	// lastCheckTime is the last time the condition has been checked.
+	// +optional
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=date-time
+	LastCheckTime *metav1.Time `json:"lastCheckTime" protobuf:"bytes,4,opt,name=lastCheckTime"`
 }
 
 // +kubebuilder:object:root=true
