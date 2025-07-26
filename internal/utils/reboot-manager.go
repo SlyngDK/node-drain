@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"time"
+
 	mod "github.com/slyngdk/node-drain/internal/modules"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"time"
 
 	"k8s.io/apimachinery/pkg/selection"
 
@@ -193,7 +194,7 @@ func (r *RebootManager) rebootNodePod(nodeName string) *corev1.Pod {
 			Containers: []corev1.Container{{
 				Name:    "shell",
 				Image:   "alpine",
-				Command: []string{"kill", "-39", "1"}, //kill -SIGRTMIN+5 1 - telling systemd to reboot
+				Command: []string{"kill", "-39", "1"}, // kill -SIGRTMIN+5 1 - telling systemd to reboot
 				SecurityContext: &corev1.SecurityContext{
 					Capabilities: &corev1.Capabilities{
 						Drop: []corev1.Capability{"*"},

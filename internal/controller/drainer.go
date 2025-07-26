@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"time"
+
 	"github.com/google/uuid"
 	v1 "github.com/slyngdk/node-drain/api/v1"
 	"github.com/slyngdk/node-drain/internal/utils"
@@ -13,7 +15,6 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"time"
 )
 
 var _ manager.Runnable = (*Drainer)(nil)
@@ -30,7 +31,7 @@ func (d *Drainer) NeedLeaderElection() bool {
 	return true
 }
 
-//+kubebuilder:rbac:groups="",namespace=$(SERVICE_NAMESPACE),resources=pods,verbs=list;watch;create;get;delete;deletecollection
+// +kubebuilder:rbac:groups="",namespace=$(SERVICE_NAMESPACE),resources=pods,verbs=list;watch;create;get;delete;deletecollection
 
 func (d *Drainer) Start(ctx context.Context) error {
 	l := zap.S().Named("drainer")
@@ -50,7 +51,7 @@ func (d *Drainer) Start(ctx context.Context) error {
 	drainRebootCheckInterval, err := getDurationVariation("drainer.rebootCheckInterval", "6h")
 	if err != nil {
 		l.Error("Failed to get 'drainer.rebootCheckInterval'", zap.Error(err))
-		drainTickerInterval = 6 * time.Hour
+		drainRebootCheckInterval = 6 * time.Hour
 	}
 	rebootCheckTicker := time.NewTicker(drainRebootCheckInterval)
 
@@ -96,7 +97,7 @@ func (d *Drainer) Start(ctx context.Context) error {
 				for _, n := range nodes.Items {
 					_ = n
 
-					before := metav1.NewTime(time.Now().Add(-1 * 60 * time.Second)) //FIXME configure check interval
+					before := metav1.NewTime(time.Now().Add(-1 * 60 * time.Second)) // FIXME configure check interval
 
 					if n.Status.RebootRequiredLastChecked == nil ||
 						n.Status.RebootRequiredLastChecked.Before(&before) {

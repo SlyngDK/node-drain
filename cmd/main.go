@@ -20,6 +20,11 @@ import (
 	"context"
 	"crypto/tls"
 	"flag"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"time"
+
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/pkg/errors"
@@ -30,12 +35,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
-	"log/slog"
-	"os"
-	"path/filepath"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -100,7 +101,8 @@ func main() {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.StringVar(&logLevel, "log-level", "info", "The log level to output and above")
 	flag.StringVar(&logFormat, "log-format", "json", "The log format (json, console)")
-	flag.StringVar(&managerNamespace, "namespace", os.Getenv("POD_NAMESPACE"), "The namespace to use for creating pods, defaults to env 'POD_NAMESPACE' else default")
+	flag.StringVar(&managerNamespace, "namespace", os.Getenv("POD_NAMESPACE"),
+		"The namespace to use for creating pods, defaults to env 'POD_NAMESPACE' else default")
 	flag.Parse()
 
 	if managerNamespace == "" {
@@ -233,7 +235,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	nodeReconciler, err := controller.NewNodeReconciler(mgr.GetClient(), mgr.GetScheme(), mgr.GetConfig(), managerNamespace)
+	nodeReconciler, err := controller.NewNodeReconciler(
+		mgr.GetClient(), mgr.GetScheme(), mgr.GetConfig(), managerNamespace)
 	if err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Node")
 		os.Exit(1)
@@ -339,7 +342,7 @@ func getLogger(logLevel, logFormat string) (*zap.Logger, error) {
 
 func loadFeatureFlags(managerNamespace string, mgr manager.Manager) manager.Runnable {
 	return manager.RunnableFunc(func(ctx context.Context) error {
-		configMapName := "nodedrain-config" //TODO load from config/env
+		configMapName := "nodedrain-config" // TODO load from config/env
 
 		cm := &corev1.ConfigMap{}
 		err := mgr.GetClient().Get(ctx, types.NamespacedName{

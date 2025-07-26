@@ -62,9 +62,9 @@ type Condition struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
-//+kubebuilder:printcolumn:name="Reboot Required",type="boolean",JSONPath=".status.rebootRequired"
-//+kubebuilder:printcolumn:name="Reboot Required Last Checked",type="string",JSONPath=".status.rebootRequiredLastChecked"
-//+kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status"
+// +kubebuilder:printcolumn:name="Reboot Required",type="boolean",JSONPath=".status.rebootRequired"
+// +kubebuilder:printcolumn:name="Reboot Required Last Checked",type="string",JSONPath=".status.rebootRequiredLastChecked"
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status"
 
 // Node is the Schema for the nodes API
 type Node struct {

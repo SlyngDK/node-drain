@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"time"
+
 	mod "github.com/slyngdk/node-drain/internal/modules"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"time"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/pkg/errors"
@@ -241,52 +242,6 @@ func (d *DrainManager) NodeExists(ctx context.Context, nodeName string) (bool, b
 
 	return true, node.Spec.Unschedulable, err
 }
-
-/*func NodeRebootFn(l *zap.Logger, namespace string) func(ctx context.Context, nodeName string, dryRun bool) error {
-	return func(ctx context.Context, nodeName string, dryRun bool) error {
-		l.Info("Node is ready to be rebooted, and not active", zap.String("nodeName", nodeName))
-
-		rebootManager := NewRebootManager(l.Named("reboot-manager"), namespace)
-		rebootRequired, _ := rebootManager.IsRebootRequired(ctx, nodeName)
-
-		splitter := "=============================="
-		if !dryRun {
-
-			fmt.Println(splitter)
-			fmt.Println("The node is now ready to be rebooted/upgraded")
-			if rebootRequired {
-				fmt.Println()
-				fmt.Println("*** System restart required ***")
-			}
-			fmt.Println(splitter)
-			fmt.Println("Please select and action:")
-			fmt.Println("\tY: Yes, I am done. Continue to running post drain tasks.")
-			fmt.Println("\tR: Reboot the node, and wait for it to be ready.")
-			fmt.Print("Y/R: ")
-
-			input := bufio.NewScanner(os.Stdin)
-			for input.Scan() {
-				if strings.TrimSpace(input.Text()) == "Y" {
-					break
-				}
-				if strings.TrimSpace(input.Text()) == "R" {
-					err := rebootManager.RebootNode(ctx, nodeName)
-					if err != nil {
-						l.Error("failure when trying to reboot node", zap.Error(err), zap.String("nodeName", nodeName))
-					}
-				}
-
-				fmt.Print("Y/R: ")
-			}
-		} else if rebootRequired {
-			fmt.Println(splitter)
-			fmt.Println("*** System restart required ***")
-			fmt.Println(splitter)
-		}
-
-		return nil
-	}
-}*/
 
 func (d *DrainManager) CordonNode(ctx context.Context, nodeName string, dryRun bool) error {
 	d.l.Debug("Cordon node", zap.String("nodeName", nodeName))

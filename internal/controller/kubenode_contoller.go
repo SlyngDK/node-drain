@@ -3,6 +3,9 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	v1 "github.com/slyngdk/node-drain/api/v1"
 	"github.com/slyngdk/node-drain/internal/utils"
 	"go.uber.org/zap"
@@ -14,8 +17,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"strings"
-	"time"
 )
 
 const (
@@ -115,7 +116,7 @@ func (r *KubeNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				}
 
 				patch := client.MergeFrom(node.DeepCopy())
-				delete(node.ObjectMeta.Labels, "nodedrain.k8s.slyng.dk/drain")
+				delete(node.Labels, "nodedrain.k8s.slyng.dk/drain")
 				if err := r.Patch(ctx, node, patch); err != nil {
 					return ctrl.Result{}, err
 				}

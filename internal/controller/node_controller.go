@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+
 	"github.com/google/uuid"
 	drainv1 "github.com/slyngdk/node-drain/api/v1"
 	mod "github.com/slyngdk/node-drain/internal/modules"
@@ -87,7 +88,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, err
 	}
 
-	if !node.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !node.DeletionTimestamp.IsZero() {
 		// The object is being deleted
 		if controllerutil.ContainsFinalizer(node, nodeDrainFinalizer) {
 			// our finalizer is present, so lets handle any external dependency
