@@ -23,6 +23,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -52,9 +54,11 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	ffclient "github.com/thomaspoignant/go-feature-flag"
+
 	drainv1 "github.com/slyngdk/node-drain/api/v1"
 	"github.com/slyngdk/node-drain/internal/controller"
-	ffclient "github.com/thomaspoignant/go-feature-flag"
+	webhookv1 "github.com/slyngdk/node-drain/internal/webhook/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -82,6 +86,7 @@ func main() {
 	var logLevel, logFormat string
 	var tlsOpts []func(*tls.Config)
 	var managerNamespace string
+	var configMapName string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -103,6 +108,7 @@ func main() {
 	flag.StringVar(&logFormat, "log-format", "json", "The log format (json, console)")
 	flag.StringVar(&managerNamespace, "namespace", os.Getenv("POD_NAMESPACE"),
 		"The namespace to use for creating pods, defaults to env 'POD_NAMESPACE' else default")
+	flag.StringVar(&configMapName, "config-map-name", "nodedrain-config", "The configMap to load configuration from")
 	flag.Parse()
 
 	if managerNamespace == "" {
@@ -229,14 +235,22 @@ func main() {
 		// if you are doing or is intended to do any operation such as perform cleanups
 		// after the manager stops then its usage might be unsafe.
 		// LeaderElectionReleaseOnCancel: true,
+		Cache: cache.Options{
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.ConfigMap{}: {
+					Namespaces: map[string]cache.Config{
+						managerNamespace: {},
+					},
+				},
+			},
+		},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to create new manager")
 		os.Exit(1)
 	}
 
-	nodeReconciler, err := controller.NewNodeReconciler(
-		mgr.GetClient(), mgr.GetScheme(), mgr.GetConfig(), managerNamespace)
+	nodeReconciler, err := controller.NewNodeReconciler(mgr.GetClient(), mgr.GetScheme(), managerNamespace)
 	if err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Node")
 		os.Exit(1)
@@ -249,12 +263,19 @@ func main() {
 	if err = (&controller.KubeNodeReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("node-drain"),
+		Recorder: mgr.GetEventRecorderFor("nodedrain"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "KubeNode")
 		os.Exit(1)
 	}
 
+	// nolint:goconst
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err := webhookv1.SetupNodeWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "Node")
+			os.Exit(1)
+		}
+	}
 	// +kubebuilder:scaffold:builder
 
 	if metricsCertWatcher != nil {
@@ -282,20 +303,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = mgr.Add(loadFeatureFlags(managerNamespace, mgr)); err != nil {
+	if err = mgr.Add(loadFeatureFlags(managerNamespace, configMapName, mgr)); err != nil {
 		setupLog.Error(err, "unable to add loadFeatureFlags runnable")
-		os.Exit(1)
-	}
-
-	drainer := &controller.Drainer{
-		Client:     mgr.GetClient(),
-		Scheme:     mgr.GetScheme(),
-		RestConfig: mgr.GetConfig(),
-		NameSpace:  managerNamespace,
-	}
-
-	if err = mgr.Add(drainer); err != nil {
-		setupLog.Error(err, "unable to add drainer runnable")
 		os.Exit(1)
 	}
 
@@ -340,10 +349,8 @@ func getLogger(logLevel, logFormat string) (*zap.Logger, error) {
 	return logger, nil
 }
 
-func loadFeatureFlags(managerNamespace string, mgr manager.Manager) manager.Runnable {
+func loadFeatureFlags(managerNamespace, configMapName string, mgr manager.Manager) manager.Runnable {
 	return manager.RunnableFunc(func(ctx context.Context) error {
-		configMapName := "nodedrain-config" // TODO load from config/env
-
 		cm := &corev1.ConfigMap{}
 		err := mgr.GetClient().Get(ctx, types.NamespacedName{
 			Namespace: managerNamespace,

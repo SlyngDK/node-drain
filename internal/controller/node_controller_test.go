@@ -69,7 +69,7 @@ var _ = Describe("Node Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 
-			controllerReconciler, err := NewNodeReconciler(k8sClient, k8sClient.Scheme(), cfg, managerNamespace)
+			controllerReconciler, err := NewNodeReconciler(k8sClient, k8sClient.Scheme(), managerNamespace)
 			Expect(err).NotTo(HaveOccurred())
 
 			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{

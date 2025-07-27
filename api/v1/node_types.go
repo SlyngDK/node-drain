@@ -29,12 +29,23 @@ const NodeDrainStatusQueued = "Queued"
 const NodeDrainStatusNext = "Next"
 const NodeDrainDrained = "Drained"
 
+type NodeState string
+
+const (
+	NodeStateActive   NodeState = "Active"
+	NodeStateCordoned NodeState = "Cordoned"
+	NodeStateRebooted NodeState = "Rebooted"
+)
+
 // NodeSpec defines the desired state of Node
 type NodeSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Drain bool `json:"drain,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:default=Active
+	// +kubebuilder:validation:Enum=Active;Cordoned;Rebooted
+	State NodeState `json:"state,omitempty"`
 }
 
 // NodeStatus defines the observed state of Node
@@ -62,6 +73,7 @@ type Condition struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
+// +kubebuilder:printcolumn:name="Requested State",type="string",JSONPath=".spec.state"
 // +kubebuilder:printcolumn:name="Reboot Required",type="boolean",JSONPath=".status.rebootRequired"
 // +kubebuilder:printcolumn:name="Reboot Required Last Checked",type="string",JSONPath=".status.rebootRequiredLastChecked"
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status"

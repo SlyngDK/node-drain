@@ -236,3 +236,42 @@ mv $(1) $(1)-$(3) ;\
 } ;\
 ln -sf $(1)-$(3) $(1)
 endef
+
+.PHONY: minikube-start
+minikube-start:
+	$(call minikube-start)
+
+define minikube-start
+minikube -p nodedrain status || { \
+minikube -p nodedrain start ;\
+};
+endef
+
+.PHONY: minikube-cert-manager
+minikube-cert-manager:
+	$(call cert-manager-install)
+
+define cert-manager-install
+helm --kube-context nodedrain status -n cert-manager cert-manager > /dev/null || { \
+helm --kube-context nodedrain repo add jetstack https://charts.jetstack.io ;\
+helm --kube-context nodedrain upgrade -i cert-manager jetstack/cert-manager --wait --namespace cert-manager --create-namespace --set installCRDs=true ;\
+$(KUBECTL) --context nodedrain wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager ;\
+$(KUBECTL) --context nodedrain wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager-cainjector ;\
+$(KUBECTL) --context nodedrain wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager-webhook ;\
+};
+endef
+
+.PHONY: minikube-deploy
+minikube-deploy: minikube-start minikube-cert-manager minikube-docker-env
+	$(MAKE) docker-build deploy; # FIXME specify kube context for deploy
+	$(KUBECTL) --context nodedrain rollout restart deployment nodedrain-controller-manager -n nodedrain-system
+
+minikube-docker-env:
+	$(call setup_minikube_docker_env)
+
+define setup_minikube_docker_env
+	minikube -p nodedrain docker-env > /tmp/nodedrain.env
+	sed -i -e 's/="/=/' -e 's/"$$//' /tmp/nodedrain.env
+	$(eval include /tmp/nodedrain.env)
+	$(eval export sed 's/=.*//' /tmp/nodedrain.env)
+endef

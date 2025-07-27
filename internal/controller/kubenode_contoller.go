@@ -2,12 +2,7 @@ package controller
 
 import (
 	"context"
-	"fmt"
-	"strings"
-	"time"
-
 	v1 "github.com/slyngdk/node-drain/api/v1"
-	"github.com/slyngdk/node-drain/internal/utils"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -20,7 +15,7 @@ import (
 )
 
 const (
-	nodeDrainFinalizer = "nodedrain.k8s.slyng.dk"
+	nodeDrainFinalizer = "nodedrain.k8s.slyng.dk/node"
 )
 
 type KubeNodeReconciler struct {
@@ -53,12 +48,19 @@ func (r *KubeNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if apierrors.IsNotFound(err) {
 			// Create node as it is missing
 
+			state := v1.NodeStateActive
+			if node.Spec.Unschedulable {
+				state = v1.NodeStateCordoned
+			}
+
 			nodeCRD = &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       node.Name,
 					Finalizers: nil,
 				},
-				Spec: v1.NodeSpec{},
+				Spec: v1.NodeSpec{
+					State: state,
+				},
 			}
 
 			err = controllerutil.SetOwnerReference(node, nodeCRD, r.Scheme)
@@ -72,7 +74,7 @@ func (r *KubeNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{}, nil
 		}
 		err = client.IgnoreNotFound(err)
 		if err != nil {
@@ -83,48 +85,6 @@ func (r *KubeNodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		// on deleted requests.
 		return ctrl.Result{}, err
 	}
-
-	labels := node.GetObjectMeta().GetLabels()
-	for label, value := range labels {
-		if !strings.HasPrefix(label, "nodedrain.k8s.slyng.dk/") {
-			continue
-		}
-		if label == "nodedrain.k8s.slyng.dk/drain" {
-			if !node.Spec.Unschedulable {
-				r.Recorder.Event(node, corev1.EventTypeWarning, "Drain", fmt.Sprintf("Waiting for node '%s' is cordon", node.Name))
-				return ctrl.Result{Requeue: true, RequeueAfter: 1 * time.Minute}, nil
-			}
-			if value == "start" {
-				nodeCRD := &v1.Node{}
-				if err := r.Get(ctx, req.NamespacedName, nodeCRD); err != nil {
-					err = client.IgnoreNotFound(err)
-					if err != nil {
-						l.Error(err, "unable to fetch Drain Node")
-					}
-					// we'll ignore not-found errors, since they can't be fixed by an immediate
-					// requeue (we'll need to wait for a new notification), and we can get them
-					// on deleted requests.
-					return ctrl.Result{}, err
-				}
-
-				if nodeCRD.Status.Status == "" {
-					nodeCRD.Status.Status = v1.NodeDrainStatusQueued
-					nodeCRD.Status.StatusChanged = utils.PtrTo(metav1.Now())
-					if err := r.Status().Update(ctx, nodeCRD); err != nil {
-						return ctrl.Result{}, err
-					}
-				}
-
-				patch := client.MergeFrom(node.DeepCopy())
-				delete(node.Labels, "nodedrain.k8s.slyng.dk/drain")
-				if err := r.Patch(ctx, node, patch); err != nil {
-					return ctrl.Result{}, err
-				}
-				r.Recorder.Event(node, corev1.EventTypeNormal, "Drain", fmt.Sprintf("Queued node drain '%s'", node.Name))
-			}
-		}
-	}
-
 	return ctrl.Result{}, nil
 }
 
