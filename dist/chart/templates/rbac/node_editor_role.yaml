@@ -1,0 +1,28 @@
+{{- if .Values.rbac.enable }}
+# permissions for end users to edit nodes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  name: node-editor-role
+rules:
+- apiGroups:
+  - drain.k8s.slyng.dk
+  resources:
+  - nodes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - drain.k8s.slyng.dk
+  resources:
+  - nodes/status
+  verbs:
+  - get
+{{- end -}}

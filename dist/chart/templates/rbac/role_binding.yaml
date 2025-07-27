@@ -1,0 +1,30 @@
+{{- if .Values.rbac.enable }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  name: nodedrain-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nodedrain-manager-role
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.controllerManager.serviceAccountName }}
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nodedrain-manager-rolebinding
+  namespace: $(SERVICE_NAMESPACE)
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nodedrain-manager-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.controllerManager.serviceAccountName }}
+    namespace: {{ .Release.Namespace }}
+{{- end -}}
