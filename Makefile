@@ -146,6 +146,10 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
+.PHONY: build-helm-chart
+build-helm-chart: manifests
+	kubebuilder edit --plugins=helm/v1-alpha
+
 ##@ Deployment
 
 ifndef ignore-not-found
