@@ -31,7 +31,7 @@ func (d *Drainer) NeedLeaderElection() bool {
 	return true
 }
 
-// +kubebuilder:rbac:groups="",namespace=$(SERVICE_NAMESPACE),resources=pods,verbs=list;watch;create;get;delete;deletecollection
+// +kubebuilder:rbac:groups="",namespace=system,resources=pods,verbs=list;watch;create;get;delete;deletecollection
 
 func (d *Drainer) Start(ctx context.Context) error {
 	l := zap.S().Named("drainer")

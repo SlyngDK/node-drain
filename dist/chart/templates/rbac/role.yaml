@@ -48,7 +48,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: nodedrain-manager-role
-  namespace: $(SERVICE_NAMESPACE)
+  namespace: {{ .Release.Namespace }}
 rules:
 - apiGroups:
   - ""
