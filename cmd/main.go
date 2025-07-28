@@ -30,7 +30,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/pkg/errors"
-	"github.com/thomaspoignant/go-feature-flag/retriever/k8sretriever"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
@@ -53,8 +52,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-
-	ffclient "github.com/thomaspoignant/go-feature-flag"
 
 	drainv1 "github.com/slyngdk/node-drain/api/v1"
 	"github.com/slyngdk/node-drain/internal/controller"
@@ -303,11 +300,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = mgr.Add(loadFeatureFlags(managerNamespace, configMapName, mgr)); err != nil {
-		setupLog.Error(err, "unable to add loadFeatureFlags runnable")
-		os.Exit(1)
-	}
-
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
@@ -347,36 +339,4 @@ func getLogger(logLevel, logFormat string) (*zap.Logger, error) {
 		return nil, errors.Wrap(err, "failed to build logger")
 	}
 	return logger, nil
-}
-
-func loadFeatureFlags(managerNamespace, configMapName string, mgr manager.Manager) manager.Runnable {
-	return manager.RunnableFunc(func(ctx context.Context) error {
-		cm := &corev1.ConfigMap{}
-		err := mgr.GetClient().Get(ctx, types.NamespacedName{
-			Namespace: managerNamespace,
-			Name:      configMapName,
-		}, cm)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return nil
-			}
-			return errors.Wrap(err, "failed to get configmap")
-		}
-
-		if _, ok := cm.Data["flags.yaml"]; !ok {
-			return nil
-		}
-
-		return ffclient.Init(ffclient.Config{
-			PollingInterval: 1 * time.Hour,
-			LeveledLogger:   slog.Default(),
-			Context:         ctx,
-			Retriever: &k8sretriever.Retriever{
-				Namespace:     managerNamespace,
-				ConfigMapName: configMapName,
-				Key:           "flags.yaml",
-				ClientConfig:  *mgr.GetConfig(),
-			},
-		})
-	})
 }
