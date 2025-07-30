@@ -15,6 +15,12 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - nodes/status
+  verbs:
+  - get
+- apiGroups:
   - drain.k8s.slyng.dk
   resources:
   - nodes

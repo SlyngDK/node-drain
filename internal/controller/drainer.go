@@ -1,6 +1,6 @@
 package controller
 
-import (
+/* import (
 	"context"
 	"time"
 
@@ -151,3 +151,4 @@ func getDurationVariation(flagKey string, defaultDuration string) (time.Duration
 	variation, _ := ffclient.StringVariation(flagKey, ffcontext.NewEvaluationContext(uuid.NewString()), defaultDuration)
 	return time.ParseDuration(variation)
 }
+*/

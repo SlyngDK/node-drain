@@ -98,7 +98,14 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-        volumeMounts: []
-      volumes: []
+        volumeMounts:
+          - name: config
+            readOnly: true
+            mountPath: /config
+      volumes:
+        - name: config
+          secret:
+            secretName: nodedrain-config
+            optional: true
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10

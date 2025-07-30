@@ -158,20 +158,20 @@ endif
 
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
+	$(KUSTOMIZE) build config/crd | $(KUBECTL) --context nodedrain apply -f -
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build config/crd | $(KUBECTL) --context nodedrain delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
+	$(KUSTOMIZE) build config/default | $(KUBECTL) --context nodedrain apply -f -
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build config/default | $(KUBECTL) --context nodedrain delete --ignore-not-found=$(ignore-not-found) -f -
 
 ##@ Dependencies
 
@@ -243,31 +243,23 @@ endef
 
 .PHONY: minikube-start
 minikube-start:
-	$(call minikube-start)
-
-define minikube-start
-minikube -p nodedrain status || { \
-minikube -p nodedrain start ;\
-};
-endef
+	minikube -p nodedrain status || { \
+    	minikube -p nodedrain start --embed-certs=true --interactive=false;\
+    };
 
 .PHONY: minikube-cert-manager
 minikube-cert-manager:
-	$(call cert-manager-install)
-
-define cert-manager-install
-helm --kube-context nodedrain status -n cert-manager cert-manager > /dev/null || { \
-helm --kube-context nodedrain repo add jetstack https://charts.jetstack.io ;\
-helm --kube-context nodedrain upgrade -i cert-manager jetstack/cert-manager --wait --namespace cert-manager --create-namespace --set installCRDs=true ;\
-$(KUBECTL) --context nodedrain wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager ;\
-$(KUBECTL) --context nodedrain wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager-cainjector ;\
-$(KUBECTL) --context nodedrain wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager-webhook ;\
-};
-endef
+	helm --kube-context nodedrain status -n cert-manager cert-manager > /dev/null || { \
+		helm --kube-context nodedrain repo add jetstack https://charts.jetstack.io ;\
+		helm --kube-context nodedrain upgrade -i cert-manager jetstack/cert-manager --wait --namespace cert-manager --create-namespace --set installCRDs=true ;\
+		$(KUBECTL) --context nodedrain wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager ;\
+		$(KUBECTL) --context nodedrain wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager-cainjector ;\
+		$(KUBECTL) --context nodedrain wait --namespace cert-manager --for=condition=available --timeout=300s deployment/cert-manager-webhook ;\
+	};
 
 .PHONY: minikube-deploy
-minikube-deploy: minikube-start minikube-cert-manager minikube-docker-env
-	$(MAKE) docker-build deploy; # FIXME specify kube context for deploy
+minikube-deploy: manifests generate minikube-start minikube-cert-manager minikube-docker-env
+	$(MAKE) docker-build deploy;
 	$(KUBECTL) --context nodedrain rollout restart deployment nodedrain-controller-manager -n nodedrain-system
 
 minikube-docker-env:

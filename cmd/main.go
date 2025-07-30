@@ -17,27 +17,24 @@ limitations under the License.
 package main
 
 import (
-	"context"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/pkg/errors"
+	config "github.com/slyngdk/node-drain/internal/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -60,11 +57,12 @@ import (
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	scheme = runtime.NewScheme()
 )
 
 func init() {
+	config.LoadDefaultConfig()
+
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(drainv1.AddToScheme(scheme))
@@ -80,7 +78,6 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
-	var logLevel, logFormat string
 	var tlsOpts []func(*tls.Config)
 	var managerNamespace string
 	var configMapName string
@@ -101,8 +98,6 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.StringVar(&logLevel, "log-level", "info", "The log level to output and above")
-	flag.StringVar(&logFormat, "log-format", "json", "The log format (json, console)")
 	flag.StringVar(&managerNamespace, "namespace", os.Getenv("POD_NAMESPACE"),
 		"The namespace to use for creating pods, defaults to env 'POD_NAMESPACE' else default")
 	flag.StringVar(&configMapName, "config-map-name", "nodedrain-config", "The configMap to load configuration from")
@@ -112,18 +107,21 @@ func main() {
 		managerNamespace = "default"
 	}
 
-	l, err := getLogger(logLevel, logFormat)
+	conf, err := config.LoadConfig()
 	if err != nil {
-		setupLog.Error(err, "Failed to create logger")
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
 	}
-	zap.ReplaceGlobals(l)
-	klog.ClearLogger()
-	klog.SetLogger(zapr.NewLogger(l.Named("kubeclient")))
-	logger := zapr.NewLogger(l)
-	log.SetLogger(logger)
-	ctrl.SetLogger(logger)
-	slog.SetDefault(slog.New(logr.ToSlogHandler(logger)))
+
+	l, loggerConfig, err := getLogger(conf.Log.Level, conf.Log.Format)
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to create logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer l.Sync() // nolint:errcheck
+	config.SetLoggerConfig(loggerConfig)
+	setGlobalLogger(l)
+	setupLog := l.Named("setup")
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -147,8 +145,11 @@ func main() {
 	webhookTLSOpts := tlsOpts
 
 	if len(webhookCertPath) > 0 {
-		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
-			"webhook-cert-path", webhookCertPath, "webhook-cert-name", webhookCertName, "webhook-cert-key", webhookCertKey)
+		setupLog.With(
+			zap.String("webhook-cert-path", webhookCertPath),
+			zap.String("webhook-cert-name", webhookCertName),
+			zap.String("webhook-cert-key", webhookCertKey)).
+			Info("Initializing webhook certificate watcher using provided certificates")
 
 		var err error
 		webhookCertWatcher, err = certwatcher.New(
@@ -156,8 +157,7 @@ func main() {
 			filepath.Join(webhookCertPath, webhookCertKey),
 		)
 		if err != nil {
-			setupLog.Error(err, "Failed to initialize webhook certificate watcher")
-			os.Exit(1)
+			setupLog.With(zap.Error(err)).Fatal("Failed to initialize webhook certificate watcher")
 		}
 
 		webhookTLSOpts = append(webhookTLSOpts, func(config *tls.Config) {
@@ -196,8 +196,11 @@ func main() {
 	// managed by cert-manager for the metrics server.
 	// - [PROMETHEUS-WITH-CERTS] at config/prometheus/kustomization.yaml for TLS certification.
 	if len(metricsCertPath) > 0 {
-		setupLog.Info("Initializing metrics certificate watcher using provided certificates",
-			"metrics-cert-path", metricsCertPath, "metrics-cert-name", metricsCertName, "metrics-cert-key", metricsCertKey)
+		setupLog.With(
+			zap.String("metrics-cert-path", metricsCertPath),
+			zap.String("metrics-cert-name", metricsCertName),
+			zap.String("metrics-cert-key", metricsCertKey)).
+			Info("Initializing metrics certificate watcher using provided certificates")
 
 		var err error
 		metricsCertWatcher, err = certwatcher.New(
@@ -205,8 +208,7 @@ func main() {
 			filepath.Join(metricsCertPath, metricsCertKey),
 		)
 		if err != nil {
-			setupLog.Error(err, "to initialize metrics certificate watcher", "error", err)
-			os.Exit(1)
+			setupLog.With(zap.Error(err)).Fatal("to initialize metrics certificate watcher")
 		}
 
 		metricsServerOptions.TLSOpts = append(metricsServerOptions.TLSOpts, func(config *tls.Config) {
@@ -243,34 +245,26 @@ func main() {
 		},
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to create new manager")
-		os.Exit(1)
+		setupLog.With(zap.Error(err)).Fatal("unable to create new manager")
 	}
 
-	nodeReconciler, err := controller.NewNodeReconciler(mgr.GetClient(), mgr.GetScheme(), managerNamespace)
+	nodeReconciler, err := controller.NewNodeReconciler(
+		mgr.GetClient(),
+		mgr.GetScheme(),
+		mgr.GetConfig(),
+		managerNamespace,
+	)
 	if err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Node")
-		os.Exit(1)
+		setupLog.With(zap.Error(err), zap.String("controller", "Node")).Fatal("unable to create node reconciler")
 	}
 	if err = nodeReconciler.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Node")
-		os.Exit(1)
-	}
-
-	if err = (&controller.KubeNodeReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("nodedrain"),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "KubeNode")
-		os.Exit(1)
+		setupLog.With(zap.Error(err), zap.String("controller", "Node")).Fatal("unable to create controller")
 	}
 
 	// nolint:goconst
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err := webhookv1.SetupNodeWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "Node")
-			os.Exit(1)
+			setupLog.With(zap.Error(err), zap.String("webhook", "Node")).Fatal("unable to create webhook")
 		}
 	}
 	// +kubebuilder:scaffold:builder
@@ -278,40 +272,35 @@ func main() {
 	if metricsCertWatcher != nil {
 		setupLog.Info("Adding metrics certificate watcher to manager")
 		if err := mgr.Add(metricsCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add metrics certificate watcher to manager")
-			os.Exit(1)
+			setupLog.With(zap.Error(err)).Fatal("unable to add metrics certificate watcher to manager")
 		}
 	}
 
 	if webhookCertWatcher != nil {
 		setupLog.Info("Adding webhook certificate watcher to manager")
 		if err := mgr.Add(webhookCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add webhook certificate watcher to manager")
-			os.Exit(1)
+			setupLog.With(zap.Error(err)).Fatal("unable to add webhook certificate watcher to manager")
 		}
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
+		setupLog.With(zap.Error(err)).Fatal("unable to set up health check")
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
+		setupLog.With(zap.Error(err)).Fatal("unable to set up ready check")
 	}
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		setupLog.With(zap.Error(err)).Fatal("problem running manager")
 	}
 
 }
 
-func getLogger(logLevel, logFormat string) (*zap.Logger, error) {
+func getLogger(logLevel, logFormat string) (*zap.Logger, *zap.Config, error) {
 	level, err := zap.ParseAtomicLevel(logLevel)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse log level")
+		return nil, nil, errors.Wrap(err, "failed to parse log level")
 	}
 
 	disableStackTrace := true
@@ -336,7 +325,17 @@ func getLogger(logLevel, logFormat string) (*zap.Logger, error) {
 
 	logger, err := loggerConfig.Build()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build logger")
+		return nil, nil, errors.Wrap(err, "failed to build logger")
 	}
-	return logger, nil
+	return logger, &loggerConfig, nil
+}
+
+func setGlobalLogger(l *zap.Logger) {
+	zap.ReplaceGlobals(l)
+	klog.ClearLogger()
+	klog.SetLogger(zapr.NewLogger(l.Named("kubeclient")))
+	logger := zapr.NewLogger(l)
+	log.SetLogger(logger)
+	ctrl.SetLogger(logger)
+	slog.SetDefault(slog.New(logr.ToSlogHandler(logger)))
 }

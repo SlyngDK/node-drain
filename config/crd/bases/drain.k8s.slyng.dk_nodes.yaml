@@ -18,14 +18,14 @@ spec:
     - jsonPath: .spec.state
       name: Requested State
       type: string
+    - jsonPath: .status.drained
+      name: Drained
+      type: boolean
     - jsonPath: .status.rebootRequired
       name: Reboot Required
       type: boolean
     - jsonPath: .status.rebootRequiredLastChecked
       name: Reboot Required Last Checked
-      type: string
-    - jsonPath: .status.status
-      name: Status
       type: string
     name: v1
     schema:
@@ -58,6 +58,7 @@ spec:
                 - Active
                 - Cordoned
                 - Rebooted
+                - Drained
                 type: string
             required:
             - state
@@ -124,18 +125,23 @@ spec:
                   - type
                   type: object
                 type: array
+              currentState:
+                enum:
+                - Active
+                - Cordoned
+                - Rebooted
+                - Drained
+                type: string
+              drained:
+                default: false
+                type: boolean
               rebootRequired:
                 type: boolean
               rebootRequiredLastChecked:
                 format: date-time
                 type: string
-              status:
-                type: string
-              statusChanged:
-                format: date-time
-                type: string
             required:
-            - rebootRequired
+            - drained
             type: object
         type: object
     served: true

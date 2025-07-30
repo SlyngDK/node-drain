@@ -23,18 +23,17 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-type NodeDrainStatus string
-
-const NodeDrainStatusQueued = "Queued"
-const NodeDrainStatusNext = "Next"
-const NodeDrainDrained = "Drained"
-
 type NodeState string
+
+func (c NodeState) String() string {
+	return string(c)
+}
 
 const (
 	NodeStateActive   NodeState = "Active"
 	NodeStateCordoned NodeState = "Cordoned"
 	NodeStateRebooted NodeState = "Rebooted"
+	NodeStateDrained  NodeState = "Drained"
 )
 
 // NodeSpec defines the desired state of Node
@@ -44,7 +43,7 @@ type NodeSpec struct {
 
 	// +kubebuilder:validation:Required
 	// +kubebuilder:default=Active
-	// +kubebuilder:validation:Enum=Active;Cordoned;Rebooted
+	// +kubebuilder:validation:Enum=Active;Cordoned;Rebooted;Drained
 	State NodeState `json:"state,omitempty"`
 }
 
@@ -53,11 +52,22 @@ type NodeStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	Conditions                []Condition     `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
-	RebootRequiredLastChecked *metav1.Time    `json:"rebootRequiredLastChecked,omitempty"`
-	RebootRequired            bool            `json:"rebootRequired"`
-	Status                    NodeDrainStatus `json:"status,omitempty"`
-	StatusChanged             *metav1.Time    `json:"statusChanged,omitempty"`
+	Conditions []Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+
+	// +optional
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=date-time
+	RebootRequiredLastChecked *metav1.Time `json:"rebootRequiredLastChecked,omitempty"`
+	// +optional
+	RebootRequired *bool `json:"rebootRequired"`
+
+	// +kubebuilder:validation:Required
+	// +kubebuilder:default=false
+	Drained bool `json:"drained"`
+
+	// +optional
+	// +kubebuilder:validation:Enum=Active;Cordoned;Rebooted;Drained
+	CurrentState NodeState `json:"currentState,omitempty"`
 }
 
 type Condition struct {
@@ -74,9 +84,9 @@ type Condition struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="Requested State",type="string",JSONPath=".spec.state"
+// +kubebuilder:printcolumn:name="Drained",type="boolean",JSONPath=".status.drained"
 // +kubebuilder:printcolumn:name="Reboot Required",type="boolean",JSONPath=".status.rebootRequired"
 // +kubebuilder:printcolumn:name="Reboot Required Last Checked",type="string",JSONPath=".status.rebootRequiredLastChecked"
-// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status"
 
 // Node is the Schema for the nodes API
 type Node struct {

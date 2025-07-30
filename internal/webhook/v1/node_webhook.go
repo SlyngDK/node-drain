@@ -19,29 +19,39 @@ package v1
 import (
 	"context"
 	"fmt"
+	"github.com/slyngdk/node-drain/internal/config"
+
+	"go.uber.org/zap"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	drainv1 "github.com/slyngdk/node-drain/api/v1"
 )
 
-// nolint:unused
-// log is for logging in this package.
-var nodelog = logf.Log.WithName("node-resource")
-
 // SetupNodeWebhookWithManager registers the webhook for Node in the manager.
 func SetupNodeWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).For(&drainv1.Node{}).
-		WithValidator(&NodeCustomValidator{}).
-		WithDefaulter(&NodeCustomDefaulter{}).
-		Complete()
-}
+	l, err := config.GetNamedLogger("node-webhook")
+	if err != nil {
+		return fmt.Errorf("failed to get logger: %w", err)
+	}
 
-// TODO(user): EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
+	return ctrl.NewWebhookManagedBy(mgr).For(&drainv1.Node{}).
+		WithValidator(&NodeCustomValidator{
+			l: l,
+		}).
+		WithDefaulter(&NodeCustomDefaulter{
+			l:      l,
+			client: mgr.GetClient(),
+		}, admission.DefaulterRemoveUnknownOrOmitableFields).
+		Complete()
+
+}
 
 // +kubebuilder:webhook:path=/mutate-drain-k8s-slyng-dk-v1-node,mutating=true,failurePolicy=fail,sideEffects=None,groups=drain.k8s.slyng.dk,resources=nodes,verbs=create;update,versions=v1,name=mnode-v1.kb.io,admissionReviewVersions=v1
 
@@ -51,23 +61,32 @@ func SetupNodeWebhookWithManager(mgr ctrl.Manager) error {
 // NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
 // as it is used only for temporary operations and does not need to be deeply copied.
 type NodeCustomDefaulter struct {
-	// TODO(user): Add more fields as needed for defaulting
+	l      *zap.Logger
+	client client.Client
 }
 
 var _ webhook.CustomDefaulter = &NodeCustomDefaulter{}
 
 // Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind Node.
-func (d *NodeCustomDefaulter) Default(_ context.Context, obj runtime.Object) error {
-	node, ok := obj.(*drainv1.Node)
-
+func (d *NodeCustomDefaulter) Default(ctx context.Context, obj runtime.Object) error {
+	newNode, ok := obj.(*drainv1.Node)
 	if !ok {
 		return fmt.Errorf("expected an Node object but got %T", obj)
 	}
-	nodelog.Info("Defaulting for Node", "name", node.GetName())
+	l := d.l.With(zap.String("name", newNode.Name))
+	l.Debug("Defaulting for Node")
+
+	oldNode := &drainv1.Node{}
+	if err := d.client.Get(ctx, types.NamespacedName{Name: newNode.Name}, oldNode); err != nil {
+		l.With(zap.Error(err)).Debug("Error getting Node")
+		if !errors.IsNotFound(err) {
+			return fmt.Errorf("could not find node %q: %w", newNode.Name, err)
+		}
+	}
 
 	// Set default values
-	d.applyDefaults(node)
-	return nil
+	d.applyDefaults(newNode)
+	return d.updateStatus(newNode, oldNode)
 }
 
 func (d *NodeCustomDefaulter) applyDefaults(node *drainv1.Node) {
@@ -76,7 +95,14 @@ func (d *NodeCustomDefaulter) applyDefaults(node *drainv1.Node) {
 	}
 }
 
-// TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
+func (d *NodeCustomDefaulter) updateStatus(newNode, oldNode *drainv1.Node) error {
+	if oldNode == nil {
+		return nil
+	}
+
+	return nil
+}
+
 // NOTE: The 'path' attribute must follow a specific pattern and should not be modified directly here.
 // Modifying the path for an invalid path can cause API server errors; failing to locate the webhook.
 // +kubebuilder:webhook:path=/validate-drain-k8s-slyng-dk-v1-node,mutating=false,failurePolicy=fail,sideEffects=None,groups=drain.k8s.slyng.dk,resources=nodes,verbs=create;update,versions=v1,name=vnode-v1.kb.io,admissionReviewVersions=v1
@@ -87,7 +113,7 @@ func (d *NodeCustomDefaulter) applyDefaults(node *drainv1.Node) {
 // NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
 // as this struct is used only for temporary operations and does not need to be deeply copied.
 type NodeCustomValidator struct {
-	// TODO(user): Add more fields as needed for validation
+	l *zap.Logger
 }
 
 var _ webhook.CustomValidator = &NodeCustomValidator{}
@@ -98,7 +124,8 @@ func (v *NodeCustomValidator) ValidateCreate(_ context.Context, obj runtime.Obje
 	if !ok {
 		return nil, fmt.Errorf("expected a Node object but got %T", obj)
 	}
-	nodelog.Info("Validation for Node upon creation", "name", node.GetName())
+	l := v.l.With(zap.String("name", node.GetName()))
+	l.Info("Validation for Node upon creation")
 
 	// TODO(user): fill in your validation logic upon object creation.
 
@@ -111,7 +138,8 @@ func (v *NodeCustomValidator) ValidateUpdate(_ context.Context, oldObj, newObj r
 	if !ok {
 		return nil, fmt.Errorf("expected a Node object for the newObj but got %T", newObj)
 	}
-	nodelog.Info("Validation for Node upon update", "name", node.GetName())
+	l := v.l.With(zap.String("name", node.GetName()))
+	l.Info("Validation for Node upon update")
 
 	// TODO(user): fill in your validation logic upon object update.
 
@@ -124,7 +152,8 @@ func (v *NodeCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Ob
 	if !ok {
 		return nil, fmt.Errorf("expected a Node object but got %T", obj)
 	}
-	nodelog.Info("Validation for Node upon deletion", "name", node.GetName())
+	l := v.l.With(zap.String("name", node.GetName()))
+	l.Info("Validation for Node upon deletion")
 
 	// TODO(user): fill in your validation logic upon object deletion.
 

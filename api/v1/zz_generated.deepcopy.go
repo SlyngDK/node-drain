@@ -132,9 +132,10 @@ func (in *NodeStatus) DeepCopyInto(out *NodeStatus) {
 		in, out := &in.RebootRequiredLastChecked, &out.RebootRequiredLastChecked
 		*out = (*in).DeepCopy()
 	}
-	if in.StatusChanged != nil {
-		in, out := &in.StatusChanged, &out.StatusChanged
-		*out = (*in).DeepCopy()
+	if in.RebootRequired != nil {
+		in, out := &in.RebootRequired, &out.RebootRequired
+		*out = new(bool)
+		**out = **in
 	}
 }
 
