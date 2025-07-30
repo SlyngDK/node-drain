@@ -167,8 +167,8 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 	if !kubeNode.Spec.Unschedulable && node.Status.Drained {
 		l.Debug("node is not unschedulable, but is still drained, updating drain status.")
-		if result, err := r.unsetDrained(ctx, node); err != nil {
-			return result, err
+		if err := r.unsetDrained(ctx, node); err != nil {
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -177,8 +177,8 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		switch node.Spec.State {
 		case drainv1.NodeStateActive:
 			if node.Status.Drained {
-				if result, err := r.unsetDrained(ctx, node); err != nil {
-					return result, err
+				if err := r.unsetDrained(ctx, node); err != nil {
+					return ctrl.Result{}, err
 				}
 			}
 			if kubeNode.Spec.Unschedulable {
@@ -208,8 +208,8 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 				return ctrl.Result{}, nil
 			}
 		}
-		if result, err := r.setCurrentState(ctx, node); err != nil {
-			return result, err
+		if err := r.setCurrentState(ctx, node); err != nil {
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -238,22 +238,22 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	return ctrl.Result{}, nil
 }
 
-func (r *nodeReconciler) unsetDrained(ctx context.Context, node *drainv1.Node) (ctrl.Result, error) {
+func (r *nodeReconciler) unsetDrained(ctx context.Context, node *drainv1.Node) error {
 	patch := client.MergeFrom(node.DeepCopy())
 	node.Status.Drained = false
 	if err := r.Status().Patch(ctx, node, patch); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update node: %w", err)
+		return fmt.Errorf("failed to update node: %w", err)
 	}
-	return ctrl.Result{}, nil
+	return nil
 }
 
-func (r *nodeReconciler) setCurrentState(ctx context.Context, node *drainv1.Node) (ctrl.Result, error) {
+func (r *nodeReconciler) setCurrentState(ctx context.Context, node *drainv1.Node) error {
 	patch := client.MergeFrom(node.DeepCopy())
 	node.Status.CurrentState = node.Spec.State
 	if err := r.Status().Patch(ctx, node, patch); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update node with current state: %w", err)
+		return fmt.Errorf("failed to update node with current state: %w", err)
 	}
-	return ctrl.Result{}, nil
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -19,6 +19,7 @@ package v1
 import (
 	"context"
 	"fmt"
+
 	"github.com/slyngdk/node-drain/internal/config"
 
 	"go.uber.org/zap"
@@ -86,21 +87,13 @@ func (d *NodeCustomDefaulter) Default(ctx context.Context, obj runtime.Object) e
 
 	// Set default values
 	d.applyDefaults(newNode)
-	return d.updateStatus(newNode, oldNode)
+	return nil
 }
 
 func (d *NodeCustomDefaulter) applyDefaults(node *drainv1.Node) {
 	if node.Spec.State == "" {
 		node.Spec.State = drainv1.NodeStateActive
 	}
-}
-
-func (d *NodeCustomDefaulter) updateStatus(newNode, oldNode *drainv1.Node) error {
-	if oldNode == nil {
-		return nil
-	}
-
-	return nil
 }
 
 // NOTE: The 'path' attribute must follow a specific pattern and should not be modified directly here.
