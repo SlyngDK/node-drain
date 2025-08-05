@@ -11,6 +11,8 @@ spec:
     kind: Node
     listKind: NodeList
     plural: nodes
+    shortNames:
+    - nd
     singular: node
   scope: Cluster
   versions:
@@ -126,10 +128,13 @@ spec:
                   type: object
                 type: array
               currentState:
+                default: OK
                 enum:
-                - Active
+                - OK
                 - Cordoned
-                - Rebooted
+                - Queued
+                - Next
+                - Draining
                 - Drained
                 type: string
               drained:
@@ -141,6 +146,7 @@ spec:
                 format: date-time
                 type: string
             required:
+            - currentState
             - drained
             type: object
         type: object

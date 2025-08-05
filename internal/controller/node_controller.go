@@ -17,9 +17,20 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"k8s.io/apimachinery/pkg/types"
+	"os"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"time"
+
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/kubectl/pkg/drain"
 
 	"github.com/slyngdk/node-drain/internal/config"
 	"github.com/slyngdk/node-drain/internal/utils"
@@ -31,30 +42,39 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
 	nodeDrainFinalizer = "nodedrain.k8s.slyng.dk/node"
+
+	currentStateField = "status.currentState"
 )
+
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups="",resources=nodes/status,verbs=get
+// +kubebuilder:rbac:groups=drain.k8s.slyng.dk,resources=nodes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=drain.k8s.slyng.dk,resources=nodes/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=drain.k8s.slyng.dk,resources=nodes/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",namespace=system,resources=pods,verbs=list;watch;create;get;delete;deletecollection
+// +kubebuilder:rbac:groups="",resources=pods,verbs=list;delete;get
+// +kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
+// +kubebuilder:rbac:groups="apps",resources=daemonsets,verbs=get;
 
 // NodeReconciler reconciles a Node object
 type nodeReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
+	restConfig       *rest.Config
 	l                *zap.Logger
 	managerNamespace string
+	nodeName         string
 	rebootManager    *utils.RebootManager
 }
 
-func NewNodeReconciler(client client.Client, schema *runtime.Scheme, restConfig *rest.Config, managerNamespace string) (*nodeReconciler, error) {
+func NewNodeReconciler(client client.Client, schema *runtime.Scheme, restConfig *rest.Config, managerNamespace string, nameNode string) (*nodeReconciler, error) {
 	l, err := config.GetNamedLogger("node")
 	if err != nil {
 		return nil, err
@@ -68,18 +88,44 @@ func NewNodeReconciler(client client.Client, schema *runtime.Scheme, restConfig 
 	return &nodeReconciler{
 		Client:           client,
 		Scheme:           schema,
+		restConfig:       restConfig,
 		l:                l,
 		managerNamespace: managerNamespace,
+		nodeName:         nameNode,
 		rebootManager:    rebootManager,
 	}, nil
 }
 
-// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups="",resources=nodes/status,verbs=get
-// +kubebuilder:rbac:groups=drain.k8s.slyng.dk,resources=nodes,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=drain.k8s.slyng.dk,resources=nodes/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=drain.k8s.slyng.dk,resources=nodes/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",namespace=system,resources=pods,verbs=list;watch;create;get;delete;deletecollection
+// SetupWithManager sets up the controller with the Manager.
+func (r *nodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &drainv1.Node{}, currentStateField, func(rawObj client.Object) []string {
+		node := rawObj.(*drainv1.Node)
+		if node.Status.CurrentState == "" {
+			return nil
+		}
+		return []string{node.Status.CurrentState.String()}
+	}); err != nil {
+		return err
+	}
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&drainv1.Node{}).
+		Watches(
+			&corev1.Node{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
+				node := object.(*corev1.Node)
+				return []reconcile.Request{
+					{
+						NamespacedName: types.NamespacedName{
+							Name: node.Name,
+						},
+					},
+				}
+			}),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
+		Complete(r)
+}
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -110,34 +156,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if err := r.Get(ctx, req.NamespacedName, node); err != nil {
 		if apierrors.IsNotFound(err) {
 			// Create node as it is missing
-
-			state := drainv1.NodeStateActive
-			if kubeNode.Spec.Unschedulable {
-				state = drainv1.NodeStateCordoned
-			}
-
-			node = &drainv1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       kubeNode.Name,
-					Finalizers: nil,
-				},
-				Spec: drainv1.NodeSpec{
-					State: state,
-				},
-			}
-
-			err = controllerutil.SetOwnerReference(kubeNode, node, r.Scheme)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-
-			controllerutil.AddFinalizer(node, nodeDrainFinalizer)
-
-			err = r.Create(ctx, node)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			return r.createNewNode(ctx, kubeNode)
 		}
 		if err != nil {
 			l.With(zap.Error(err)).Error("unable to fetch node")
@@ -165,55 +184,126 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, nil
 	}
 
-	if !kubeNode.Spec.Unschedulable && node.Status.Drained {
+	if (!kubeNode.Spec.Unschedulable || node.Spec.State == drainv1.NodeStateActive) && node.Status.Drained {
 		l.Debug("node is not unschedulable, but is still drained, updating drain status.")
-		if err := r.unsetDrained(ctx, node); err != nil {
+		if err := r.setDrained(ctx, node, false); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	if node.Spec.State != node.Status.CurrentState {
-		l.With(zap.String("state", node.Spec.State.String()), zap.String("currentState", node.Status.CurrentState.String())).Info("node state have changed state, since last reconcile.")
-		switch node.Spec.State {
-		case drainv1.NodeStateActive:
-			if node.Status.Drained {
-				if err := r.unsetDrained(ctx, node); err != nil {
-					return ctrl.Result{}, err
-				}
+	switch node.Spec.State {
+	case drainv1.NodeStateActive:
+		if kubeNode.Spec.Unschedulable {
+			patch := client.MergeFrom(kubeNode.DeepCopy())
+			kubeNode.Spec.Unschedulable = false
+			if err := r.Patch(ctx, kubeNode, patch); err != nil {
+				return ctrl.Result{}, err
 			}
-			if kubeNode.Spec.Unschedulable {
-				patch := client.MergeFrom(kubeNode.DeepCopy())
-				kubeNode.Spec.Unschedulable = false
-				if err := r.Patch(ctx, kubeNode, patch); err != nil {
-					return ctrl.Result{}, err
-				}
-				return ctrl.Result{}, nil
-			}
-		case drainv1.NodeStateCordoned:
-			if !kubeNode.Spec.Unschedulable {
-				patch := client.MergeFrom(kubeNode.DeepCopy())
-				kubeNode.Spec.Unschedulable = true
-				if err := r.Patch(ctx, kubeNode, patch); err != nil {
-					return ctrl.Result{}, err
-				}
-				return ctrl.Result{}, nil
-			}
-		case drainv1.NodeStateDrained:
-			if !kubeNode.Spec.Unschedulable {
-				patch := client.MergeFrom(kubeNode.DeepCopy())
-				kubeNode.Spec.Unschedulable = true
-				if err := r.Patch(ctx, kubeNode, patch); err != nil {
-					return ctrl.Result{}, err
-				}
-				return ctrl.Result{}, nil
-			}
+			return ctrl.Result{}, nil
 		}
-		if err := r.setCurrentState(ctx, node); err != nil {
+		if err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateOk); err != nil {
 			return ctrl.Result{}, err
+		}
+	case drainv1.NodeStateCordoned:
+		if !kubeNode.Spec.Unschedulable {
+			patch := client.MergeFrom(kubeNode.DeepCopy())
+			kubeNode.Spec.Unschedulable = true
+			if err := r.Patch(ctx, kubeNode, patch); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, nil
+		}
+		if err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateCordoned); err != nil {
+			return ctrl.Result{}, err
+		}
+	case drainv1.NodeStateDrained:
+		if !node.Status.CurrentState.WorkState() && node.Status.CurrentState != drainv1.NodeCurrentStateQueued {
+			if err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateQueued); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{RequeueAfter: 1 * time.Second}, nil
 		}
 	}
 
 	// Check reboot
+	if err := r.checkRebootRequired(ctx, node, l); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if node.Status.CurrentState.WorkState() {
+		if node.Spec.State == drainv1.NodeStateDrained && !node.Status.Drained {
+			result, err := r.drain(ctx, l, node, kubeNode)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if result != nil {
+				return *result, nil
+			}
+		}
+	} else if node.Status.CurrentState == drainv1.NodeCurrentStateQueued {
+		l.Debug("Checking if queued node is next")
+		next, err := r.isNextNode(ctx, l, node)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if next {
+			return ctrl.Result{RequeueAfter: 1 * time.Second}, nil
+		} else {
+			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+		}
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *nodeReconciler) createNewNode(ctx context.Context, kubeNode *corev1.Node) (ctrl.Result, error) {
+	state := drainv1.NodeStateActive
+	if kubeNode.Spec.Unschedulable {
+		state = drainv1.NodeStateCordoned
+	}
+
+	node := &drainv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       kubeNode.Name,
+			Finalizers: nil,
+		},
+		Spec: drainv1.NodeSpec{
+			State: state,
+		},
+	}
+
+	if err := controllerutil.SetOwnerReference(kubeNode, node, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	controllerutil.AddFinalizer(node, nodeDrainFinalizer)
+
+	if err := r.Create(ctx, node); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+}
+
+func (r *nodeReconciler) setDrained(ctx context.Context, node *drainv1.Node, drained bool) error {
+	patch := client.MergeFrom(node.DeepCopy())
+	node.Status.Drained = drained
+	if err := r.Status().Patch(ctx, node, patch); err != nil {
+		return fmt.Errorf("failed to update drained status on node: %w", err)
+	}
+	return nil
+}
+
+func (r *nodeReconciler) setCurrentState(ctx context.Context, l *zap.Logger, node *drainv1.Node, s drainv1.NodeCurrentState) error {
+	l.Info("setting current state on node", zap.String("currentState", s.String()))
+	patch := client.MergeFrom(node.DeepCopy())
+	node.Status.CurrentState = s
+	if err := r.Status().Patch(ctx, node, patch); err != nil {
+		return fmt.Errorf("failed to update current state on node: %w", err)
+	}
+	return nil
+}
+
+func (r *nodeReconciler) checkRebootRequired(ctx context.Context, node *drainv1.Node, l *zap.Logger) error {
 	rebootCheckInterval := config.GetKoanf().Duration("reboot.checkInterval")
 	if rebootCheckInterval < 5*time.Minute {
 		rebootCheckInterval = 24 * time.Hour
@@ -224,55 +314,136 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		l.Debug("Checking if reboot is required")
 		required, err := r.rebootManager.IsRebootRequired(ctx, node.Name)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to check if reboot is required: %w", err)
+			return fmt.Errorf("failed to check if reboot is required: %w", err)
 		}
 		// TODO change to use conditions
 		patch := client.MergeFrom(node.DeepCopy())
 		node.Status.RebootRequired = utils.PtrTo(required)
 		node.Status.RebootRequiredLastChecked = &metav1.Time{Time: time.Now()}
 		if err = r.Status().Patch(ctx, node, patch); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update node reboot required last checked: %w", err)
+			return fmt.Errorf("failed to update node reboot required last checked: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1.Node, kubeNode *corev1.Node) (*ctrl.Result, error) {
+	if node.Spec.State != drainv1.NodeStateDrained || node.Status.Drained {
+		return nil, nil
+	}
+
+	if node.Status.CurrentState == drainv1.NodeCurrentStateNext {
+		err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateDraining)
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	return ctrl.Result{}, nil
-}
-
-func (r *nodeReconciler) unsetDrained(ctx context.Context, node *drainv1.Node) error {
-	patch := client.MergeFrom(node.DeepCopy())
-	node.Status.Drained = false
-	if err := r.Status().Patch(ctx, node, patch); err != nil {
-		return fmt.Errorf("failed to update node: %w", err)
+	if !kubeNode.Spec.Unschedulable {
+		l.Info("Disable scheduling on node")
+		patch := client.MergeFrom(kubeNode.DeepCopy())
+		kubeNode.Spec.Unschedulable = true
+		if err := r.Patch(ctx, kubeNode, patch); err != nil {
+			return nil, err
+		}
 	}
-	return nil
-}
 
-func (r *nodeReconciler) setCurrentState(ctx context.Context, node *drainv1.Node) error {
-	patch := client.MergeFrom(node.DeepCopy())
-	node.Status.CurrentState = node.Spec.State
-	if err := r.Status().Patch(ctx, node, patch); err != nil {
-		return fmt.Errorf("failed to update node with current state: %w", err)
+	if r.nodeName == node.Name {
+		l.Info("Running on the node which is about to be drained")
+		// TODO stop this controller after Cordon of the node
+		err := r.rescheduleController(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to reschedule controller: %w", err)
+		}
+		return &ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
-	return nil
+
+	// TODO Ensure node is drained
+
+	clientSet, err := kubernetes.NewForConfig(r.restConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+
+	drainHelper := &drain.Helper{
+		Ctx:                 ctx,
+		Client:              clientSet,
+		GracePeriodSeconds:  -1, // Wait for pod's terminationGracePeriodSeconds
+		IgnoreAllDaemonSets: true,
+		Timeout:             60 * time.Second,
+		DeleteEmptyDirData:  true,
+		Out:                 stdout,
+		ErrOut:              stderr,
+	}
+
+	// if dryRun {
+	//	drainHelper.DryRunStrategy = cmdutil.DryRunServer
+	// }
+
+	l.Info("draining node")
+
+	err = drain.RunNodeDrain(drainHelper, node.Name)
+	if err != nil {
+		l.Error("failed to drain node",
+			zap.String("stdout", stdout.String()),
+			zap.String("stderr", stderr.String()))
+		return nil, errors.Join(fmt.Errorf("failed to drain node: %s", node.Name), err)
+	}
+
+	l.Info("drained node",
+		zap.String("stdout", stdout.String()),
+		zap.String("stderr", stderr.String()))
+
+	patch := client.MergeFrom(node.DeepCopy())
+	node.Status.Drained = true
+	node.Status.CurrentState = drainv1.NodeCurrentStateDrained
+	if err := r.Status().Patch(ctx, node, patch); err != nil {
+		return nil, fmt.Errorf("failed to update drained status on node: %w", err)
+	}
+
+	return nil, nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func (r *nodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&drainv1.Node{}).
-		Watches(
-			&corev1.Node{},
-			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, object client.Object) []reconcile.Request {
-				node := object.(*corev1.Node)
-				return []reconcile.Request{
-					{
-						NamespacedName: types.NamespacedName{
-							Name: node.Name,
-						},
-					},
-				}
-			}),
-			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
-		).
-		Complete(r)
+func (r *nodeReconciler) rescheduleController(ctx context.Context) error {
+	clientset, err := kubernetes.NewForConfig(r.restConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create clientset: %w", err)
+	}
+	podName, err := os.Hostname()
+	if err != nil {
+		return fmt.Errorf("failed to get hostname/podName: %w", err)
+	}
+
+	deletePolicy := metav1.DeletePropagationForeground
+	return clientset.CoreV1().Pods(r.managerNamespace).Delete(ctx, podName, metav1.DeleteOptions{
+		PropagationPolicy: &deletePolicy,
+	})
+}
+
+func (r *nodeReconciler) isNextNode(ctx context.Context, l *zap.Logger, node *drainv1.Node) (bool, error) {
+	nodeList := &drainv1.NodeList{}
+	err := r.Client.List(ctx, nodeList, &client.ListOptions{})
+	if err != nil {
+		return false, err
+	}
+
+	for _, n := range nodeList.Items {
+		if n.Status.CurrentState.WorkState() {
+			l.Debug("There is already a node doing work")
+			return false, nil
+		}
+	}
+
+	if node.Status.CurrentState == drainv1.NodeCurrentStateQueued {
+		err = r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateNext)
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	return false, nil
 }

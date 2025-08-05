@@ -118,7 +118,7 @@ func (v *NodeCustomValidator) ValidateCreate(_ context.Context, obj runtime.Obje
 		return nil, fmt.Errorf("expected a Node object but got %T", obj)
 	}
 	l := v.l.With(zap.String("name", node.GetName()))
-	l.Info("Validation for Node upon creation")
+	l.Debug("Validation for Node upon creation")
 
 	// TODO(user): fill in your validation logic upon object creation.
 
@@ -132,7 +132,7 @@ func (v *NodeCustomValidator) ValidateUpdate(_ context.Context, oldObj, newObj r
 		return nil, fmt.Errorf("expected a Node object for the newObj but got %T", newObj)
 	}
 	l := v.l.With(zap.String("name", node.GetName()))
-	l.Info("Validation for Node upon update")
+	l.Debug("Validation for Node upon update")
 
 	// TODO(user): fill in your validation logic upon object update.
 
@@ -146,7 +146,7 @@ func (v *NodeCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Ob
 		return nil, fmt.Errorf("expected a Node object but got %T", obj)
 	}
 	l := v.l.With(zap.String("name", node.GetName()))
-	l.Info("Validation for Node upon deletion")
+	l.Debug("Validation for Node upon deletion")
 
 	// TODO(user): fill in your validation logic upon object deletion.
 

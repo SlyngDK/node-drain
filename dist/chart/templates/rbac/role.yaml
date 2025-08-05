@@ -18,6 +18,25 @@ rules:
   - update
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - nodes/status
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - delete
+  - list
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  verbs:
+  - get
+- apiGroups:
   - drain.k8s.slyng.dk
   resources:
   - nodes

@@ -123,6 +123,12 @@ func main() {
 	setGlobalLogger(l)
 	setupLog := l.Named("setup")
 
+	nodeName := os.Getenv("POD_NODENAME")
+	if nodeName == "" {
+		nodeName = "no-node-name"
+		setupLog.Sugar().Warnf("POD_NODENAME environment variable not set, using %s as node name", nodeName)
+	}
+
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
 	// prevent from being vulnerable to the HTTP/2 Stream Cancellation and
@@ -253,6 +259,7 @@ func main() {
 		mgr.GetScheme(),
 		mgr.GetConfig(),
 		managerNamespace,
+		nodeName,
 	)
 	if err != nil {
 		setupLog.With(zap.Error(err), zap.String("controller", "Node")).Fatal("unable to create node reconciler")

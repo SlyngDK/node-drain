@@ -166,12 +166,12 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) --context nodedrain apply -f -
+	cd config/dev && $(KUSTOMIZE) edit set image controller=${IMG}
+	$(KUSTOMIZE) build config/dev | $(KUBECTL) --context nodedrain apply -f -
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | $(KUBECTL) --context nodedrain delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build config/dev | $(KUBECTL) --context nodedrain delete --ignore-not-found=$(ignore-not-found) -f -
 
 ##@ Dependencies
 
@@ -244,8 +244,17 @@ endef
 .PHONY: minikube-start
 minikube-start:
 	minikube -p nodedrain status || { \
-    	minikube -p nodedrain start --embed-certs=true --interactive=false;\
+    	minikube start -p nodedrain --embed-certs=true --interactive=false --install-addons=false --nodes=2 ;\
+    	minikube -p nodedrain addons enable registry ;\
     };
+	[ ! "$$($(CONTAINER_TOOL) ps -a -q -f name=nodedrain-registry-proxy)" ] &&	$(CONTAINER_TOOL) run --rm -d --name nodedrain-registry-proxy --network=host alpine ash -c "apk add socat && socat TCP-LISTEN:5000,reuseaddr,fork TCP:$$(minikube -p nodedrain ip):5000" || true
+	timeout 300 bash -c 'while [[ "$$(curl -s -o /dev/null -w ''%{http_code}'' localhost:5000)" != "200" ]]; do sleep 1; done' || false
+
+
+.PHONY: minikube-stop
+minikube-stop:
+	docker rm -f nodedrain-registry-proxy
+	minikube -p nodedrain stop
 
 .PHONY: minikube-cert-manager
 minikube-cert-manager:
@@ -258,16 +267,6 @@ minikube-cert-manager:
 	};
 
 .PHONY: minikube-deploy
-minikube-deploy: manifests generate minikube-start minikube-cert-manager minikube-docker-env
-	$(MAKE) docker-build deploy;
+minikube-deploy: manifests generate minikube-start minikube-cert-manager
+	$(MAKE) -e IMG=localhost:5000/controller:latest docker-build docker-push deploy;
 	$(KUBECTL) --context nodedrain rollout restart deployment nodedrain-controller-manager -n nodedrain-system
-
-minikube-docker-env:
-	$(call setup_minikube_docker_env)
-
-define setup_minikube_docker_env
-	minikube -p nodedrain docker-env > /tmp/nodedrain.env
-	sed -i -e 's/="/=/' -e 's/"$$//' /tmp/nodedrain.env
-	$(eval include /tmp/nodedrain.env)
-	$(eval export sed 's/=.*//' /tmp/nodedrain.env)
-endef

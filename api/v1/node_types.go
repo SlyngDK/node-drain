@@ -46,6 +46,42 @@ type NodeSpec struct {
 	// +kubebuilder:validation:Enum=Active;Cordoned;Rebooted;Drained
 	State NodeState `json:"state,omitempty"`
 }
+type NodeCurrentState string
+
+func (c NodeCurrentState) String() string {
+	return string(c)
+}
+func (c NodeCurrentState) WorkState() bool {
+	switch c {
+	case NodeCurrentStateOk, NodeCurrentStateCordoned, NodeCurrentStateQueued:
+		return false
+	}
+	return true
+}
+
+const (
+	NodeCurrentStateOk       NodeCurrentState = "OK"
+	NodeCurrentStateCordoned NodeCurrentState = "Cordoned"
+	NodeCurrentStateQueued   NodeCurrentState = "Queued"
+	NodeCurrentStateNext     NodeCurrentState = "Next"
+	NodeCurrentStateDraining NodeCurrentState = "Draining"
+	NodeCurrentStateDrained  NodeCurrentState = "Drained"
+)
+
+var (
+	nodeCurrentStates = [...]NodeCurrentState{
+		NodeCurrentStateOk,
+		NodeCurrentStateCordoned,
+		NodeCurrentStateQueued,
+		NodeCurrentStateNext,
+		NodeCurrentStateDraining,
+		NodeCurrentStateDrained,
+	}
+)
+
+func GetNodeCurrentStates() []NodeCurrentState {
+	return nodeCurrentStates[:]
+}
 
 // NodeStatus defines the observed state of Node
 type NodeStatus struct {
@@ -65,9 +101,10 @@ type NodeStatus struct {
 	// +kubebuilder:default=false
 	Drained bool `json:"drained"`
 
-	// +optional
-	// +kubebuilder:validation:Enum=Active;Cordoned;Rebooted;Drained
-	CurrentState NodeState `json:"currentState,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:default=OK
+	// +kubebuilder:validation:Enum=OK;Cordoned;Queued;Next;Draining;Drained
+	CurrentState NodeCurrentState `json:"currentState,omitempty"`
 }
 
 type Condition struct {
@@ -82,7 +119,7 @@ type Condition struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Cluster,shortName=nd
 // +kubebuilder:printcolumn:name="Requested State",type="string",JSONPath=".spec.state"
 // +kubebuilder:printcolumn:name="Drained",type="boolean",JSONPath=".status.drained"
 // +kubebuilder:printcolumn:name="Reboot Required",type="boolean",JSONPath=".status.rebootRequired"
