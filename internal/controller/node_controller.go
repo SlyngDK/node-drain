@@ -21,13 +21,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"k8s.io/apimachinery/pkg/types"
 	"os"
+	"time"
+
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"time"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubectl/pkg/drain"
@@ -142,13 +143,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 
 	kubeNode := &corev1.Node{}
 	if err := r.Get(ctx, req.NamespacedName, kubeNode); err != nil {
-		err = client.IgnoreNotFound(err)
-		if err != nil {
-			l.With(zap.Error(err)).Error("unable to fetch kube node")
-		}
-		// we'll ignore not-found errors, since they can't be fixed by an immediate
-		// requeue (we'll need to wait for a new notification), and we can get them
-		// on deleted requests.
+		l.With(zap.Error(err)).Error("unable to fetch kube node")
 		return ctrl.Result{}, err
 	}
 

@@ -18,14 +18,21 @@ package controller
 
 import (
 	"context"
+	"time"
 
+	"github.com/slyngdk/node-drain/internal/config"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	drainv1 "github.com/slyngdk/node-drain/api/v1"
 )
@@ -37,47 +44,71 @@ var _ = Describe("Node Controller", func() {
 		ctx := context.Background()
 
 		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Name: resourceName,
 		}
-		node := &drainv1.Node{}
+
+		_, err := config.LoadConfig()
+		Expect(err).NotTo(HaveOccurred())
+
+		encoderConfig := zap.NewProductionEncoderConfig()
+		encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+		loggerConfig := &zap.Config{
+			Level:             zap.NewAtomicLevelAt(zap.InfoLevel),
+			Encoding:          "json",
+			EncoderConfig:     encoderConfig,
+			OutputPaths:       []string{"stdout"},
+			ErrorOutputPaths:  []string{"stderr"},
+			DisableStacktrace: false,
+		}
+		config.SetLoggerConfig(loggerConfig)
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind Node")
-			err := k8sClient.Get(ctx, typeNamespacedName, node)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &drainv1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
+
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &drainv1.Node{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(client.IgnoreNotFound(err)).NotTo(HaveOccurred())
+			if !apierrors.IsNotFound(err) {
+				By("Cleanup the specific resource instance Node")
+				controllerutil.RemoveFinalizer(resource, nodeDrainFinalizer)
+				Expect(k8sClient.Update(ctx, resource)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			}
 
-			By("Cleanup the specific resource instance Node")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			kubeNode := &corev1.Node{}
+			err = k8sClient.Get(ctx, typeNamespacedName, kubeNode)
+			Expect(client.IgnoreNotFound(err)).NotTo(HaveOccurred())
+			if !apierrors.IsNotFound(err) {
+				By("Cleanup the specific kubenode")
+				Expect(k8sClient.Delete(ctx, kubeNode)).To(Succeed())
+			}
 		})
 		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
+			By("Reconciling kube node which should result in a new created node with same name")
 
-			controllerReconciler, err := NewNodeReconciler(k8sClient, k8sClient.Scheme(), nil, managerNamespace, "")
+			kubeNode := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: resourceName,
+				},
+			}
+			Expect(k8sClient.Create(ctx, kubeNode)).To(Succeed())
+
+			controllerReconciler, err := NewNodeReconciler(k8sClient, k8sClient.Scheme(), cfg, managerNamespace, "node-test")
 			Expect(err).NotTo(HaveOccurred())
 
-			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+			res, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+			Expect(res).ShouldNot(BeNil())
+			Expect(res.RequeueAfter).Should(Equal(5 * time.Second))
+
+			resource := &drainv1.Node{}
+			err = k8sClient.Get(ctx, typeNamespacedName, resource)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resource.Spec.State).Should(Equal(drainv1.NodeStateActive))
 		})
 	})
 })
