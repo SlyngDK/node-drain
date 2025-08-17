@@ -24,9 +24,21 @@ COPY internal/ internal/
 RUN --mount=type=cache,target=/root/.cache \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -o manager cmd/main.go
 
+
+FROM builder AS builder-plugin
+COPY examples/ examples/
+RUN --mount=type=cache,target=/root/.cache \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -o example-plugin.so examples/plugin/example-plugin.go
+
+FROM alpine:3.22.1 AS example-plugin
+WORKDIR /
+COPY --from=builder-plugin /workspace/example-plugin.so .
+USER 65532:65532
+CMD ["cp", "-v", "/example-plugin.so", "/plugins/example-plugin.so"]
+
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+FROM gcr.io/distroless/static:debug-nonroot AS controller
 WORKDIR /
 COPY --from=builder /workspace/manager .
 USER 65532:65532

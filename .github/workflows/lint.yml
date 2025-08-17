@@ -5,8 +5,7 @@ on:
   pull_request:
 
 jobs:
-  lint:
-    name: Run on Ubuntu
+  golangci-lint:
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
@@ -21,3 +20,15 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.3.0
+
+  buf-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Install the `buf` CLI
+        uses: bufbuild/buf-setup-action@v1
+
+      - name: Run buf lint
+        uses: bufbuild/buf-lint-action@v1

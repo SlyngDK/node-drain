@@ -5,8 +5,7 @@ on:
   pull_request:
 
 jobs:
-  test-e2e:
-    name: Run on Ubuntu
+  test-chart:
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
@@ -32,8 +31,8 @@ jobs:
       - name: Prepare nodedrain
         run: |
           go mod tidy
-          make docker-build IMG=nodedrain:v0.1.0
-          kind load docker-image nodedrain:v0.1.0
+          make docker-build IMG_NAME_CONTROLLER=nodedrain IMG_TAG=v0.1.0
+          kind load docker-image IMG_NAME_CONTROLLER=nodedrain IMG_TAG=v0.1.0
 
       - name: Install Helm
         run: |

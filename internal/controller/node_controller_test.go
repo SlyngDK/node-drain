@@ -21,8 +21,6 @@ import (
 	"time"
 
 	"github.com/slyngdk/node-drain/internal/config"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -50,17 +48,7 @@ var _ = Describe("Node Controller", func() {
 		_, err := config.LoadConfig()
 		Expect(err).NotTo(HaveOccurred())
 
-		encoderConfig := zap.NewProductionEncoderConfig()
-		encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-		loggerConfig := &zap.Config{
-			Level:             zap.NewAtomicLevelAt(zap.InfoLevel),
-			Encoding:          "json",
-			EncoderConfig:     encoderConfig,
-			OutputPaths:       []string{"stdout"},
-			ErrorOutputPaths:  []string{"stderr"},
-			DisableStacktrace: false,
-		}
-		config.SetLoggerConfig(loggerConfig)
+		_, _ = config.GetLogger("info", "json")
 
 		BeforeEach(func() {
 

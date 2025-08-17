@@ -1,5 +1,10 @@
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG_REGISTRY ?=
+IMG_NAME_CONTROLLER ?= controller
+IMG_NAME_EXAM_PLUGIN ?= example-plugin
+IMG_TAG ?= latest
+KUBE_CONTEXT ?= kind-nodedrain-test-e2e
+KUSTOMIZE_CONFIG ?= default
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -46,12 +51,14 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: controller-gen buf ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+	$(BUF) generate
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 .PHONY: fmt
-fmt: ## Run go fmt against code.
+fmt: buf
 	go fmt ./...
+	$(BUF) format -w
 
 .PHONY: vet
 vet: ## Run go vet against code.
@@ -82,7 +89,7 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 	esac
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
+test-e2e: cleanup-test-e2e setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
 	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
 	$(MAKE) cleanup-test-e2e
 
@@ -91,8 +98,9 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
 .PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter
+lint: golangci-lint buf ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run
+	$(BUF) lint
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
@@ -107,6 +115,7 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
+	go build -o bin/example-plugin.so examples/plugin/example-plugin.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -117,17 +126,19 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+	$(CONTAINER_TOOL) build --target controller -t ${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG} .
+	$(CONTAINER_TOOL) build --target example-plugin -t ${IMG_REGISTRY}${IMG_NAME_EXAM_PLUGIN}:${IMG_TAG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push ${IMG}
+	$(CONTAINER_TOOL) push ${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG}
+	$(CONTAINER_TOOL) push ${IMG_REGISTRY}${IMG_NAME_EXAM_PLUGIN}:${IMG_TAG}
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
-# architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
+# architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator IMG_TAG=0.0.1). To use this option you need to:
 # - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
 # - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
-# - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
+# - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image IMG_TAG=<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
@@ -136,15 +147,15 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name nodedrain-builder
 	$(CONTAINER_TOOL) buildx use nodedrain-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm nodedrain-builder
 	rm Dockerfile.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default > dist/install.yaml
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG}
+	$(KUSTOMIZE) build config/$(KUSTOMIZE_CONFIG) > dist/install.yaml
 
 .PHONY: build-helm-chart
 build-helm-chart: manifests
@@ -158,20 +169,20 @@ endif
 
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) --context nodedrain apply -f -
+	$(KUSTOMIZE) build config/crd | $(KUBECTL) --context $(KUBE_CONTEXT) apply -f -
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) --context nodedrain delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build config/crd | $(KUBECTL) --context $(KUBE_CONTEXT) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/dev && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/dev | $(KUBECTL) --context nodedrain apply -f -
+	cd config/${KUSTOMIZE_CONFIG} && $(KUSTOMIZE) edit set image controller=${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG}
+	$(KUSTOMIZE) build config/${KUSTOMIZE_CONFIG} | $(KUBECTL) --context ${KUBE_CONTEXT} apply -f -
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/dev | $(KUBECTL) --context nodedrain delete --ignore-not-found=$(ignore-not-found) -f -
+	$(KUSTOMIZE) build config/${KUSTOMIZE_CONFIG} | $(KUBECTL) --context ${KUBE_CONTEXT} delete --ignore-not-found=$(ignore-not-found) -f -
 
 ##@ Dependencies
 
@@ -187,6 +198,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+BUF = $(LOCALBIN)/buf
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
@@ -196,6 +208,7 @@ ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.3.0
+BUF_VERSION ?= v1.56.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -206,6 +219,11 @@ $(KUSTOMIZE): $(LOCALBIN)
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
 $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
+
+.PHONY: buf
+buf: $(BUF) ## Download buf locally if necessary.
+$(BUF): $(LOCALBIN)
+	$(call go-install-tool,$(BUF),github.com/bufbuild/buf/cmd/buf,$(BUF_VERSION))
 
 .PHONY: setup-envtest
 setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
@@ -251,10 +269,10 @@ minikube-start:
 	timeout 300 bash -c 'while [[ "$$(curl -s -o /dev/null -w ''%{http_code}'' localhost:5000)" != "200" ]]; do sleep 1; done' || false
 
 
-.PHONY: minikube-stop
-minikube-stop:
+.PHONY: minikube-cleanup
+minikube-cleanup:
 	docker rm -f nodedrain-registry-proxy
-	minikube -p nodedrain stop
+	minikube -p nodedrain delete
 
 .PHONY: minikube-cert-manager
 minikube-cert-manager:
@@ -268,5 +286,5 @@ minikube-cert-manager:
 
 .PHONY: minikube-deploy
 minikube-deploy: manifests generate minikube-start minikube-cert-manager
-	$(MAKE) -e IMG=localhost:5000/controller:latest docker-build docker-push deploy;
+	$(MAKE) -e IMG_REGISTRY=localhost:5000/ -e KUBE_CONTEXT=nodedrain -e KUSTOMIZE_CONFIG=dev docker-build docker-push deploy
 	$(KUBECTL) --context nodedrain rollout restart deployment nodedrain-controller-manager -n nodedrain-system

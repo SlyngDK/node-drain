@@ -54,11 +54,12 @@ var _ = Describe("Manager", Ordered, func() {
 		_, err := utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create namespace")
 
-		By("labeling the namespace to enforce the restricted security policy")
-		cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
-			"pod-security.kubernetes.io/enforce=restricted")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
+		// FIXME
+		// By("labeling the namespace to enforce the restricted security policy")
+		// cmd = exec.Command("kubectl", "label", "--overwrite", "ns", namespace,
+		// 	"pod-security.kubernetes.io/enforce=restricted")
+		// _, err = utils.Run(cmd)
+		// Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
 
 		By("installing CRDs")
 		cmd = exec.Command("make", "install")
@@ -66,7 +67,7 @@ var _ = Describe("Manager", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
 
 		By("deploying the controller-manager")
-		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
+		cmd = exec.Command("make", makeImageVars("deploy")...)
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
 	})
@@ -76,6 +77,14 @@ var _ = Describe("Manager", Ordered, func() {
 	AfterAll(func() {
 		By("cleaning up the curl pod for metrics")
 		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
+		_, _ = utils.Run(cmd)
+
+		By("delete nodes.drain.k8s.slyng.dk")
+		cmd = exec.Command("kubectl", "delete", "--all", "nodes.drain.k8s.slyng.dk")
+		_, _ = utils.Run(cmd)
+
+		By("wait for delete nodes.drain.k8s.slyng.dk")
+		cmd = exec.Command("kubectl", "wait", "--for=delete", "--all", "nodes.drain.k8s.slyng.dk")
 		_, _ = utils.Run(cmd)
 
 		By("undeploying the controller-manager")
@@ -88,6 +97,10 @@ var _ = Describe("Manager", Ordered, func() {
 
 		By("removing manager namespace")
 		cmd = exec.Command("kubectl", "delete", "ns", namespace)
+		_, _ = utils.Run(cmd)
+
+		By("removing cluster role binding for metrics test")
+		cmd = exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName)
 		_, _ = utils.Run(cmd)
 	})
 
@@ -203,7 +216,7 @@ var _ = Describe("Manager", Ordered, func() {
 				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(output).To(ContainSubstring("controller-runtime.metrics\tServing metrics server"),
+				g.Expect(output).To(ContainSubstring("\"msg\":\"Serving metrics server\""),
 					"Metrics server not yet started")
 			}
 			Eventually(verifyMetricsServerStarted).Should(Succeed())

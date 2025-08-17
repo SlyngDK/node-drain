@@ -37,9 +37,17 @@ var (
 	// isCertManagerAlreadyInstalled will be set true when CertManager CRDs be found on the cluster
 	isCertManagerAlreadyInstalled = false
 
-	// projectImage is the name of the image which will be build and loaded
-	// with the code source changes to be tested.
-	projectImage = "example.com/nodedrain:v0.0.1"
+	projectRegistry        = "example.com/"
+	projectControllerImage = "nodedrain"
+	projectImageTag        = "v0.0.1"
+	makeImageVars          = func(arg string) []string {
+		return []string{
+			arg,
+			fmt.Sprintf("IMG_REGISTRY=%s", projectRegistry),
+			fmt.Sprintf("IMG_NAME_CONTROLLER=%s", projectControllerImage),
+			fmt.Sprintf("IMG_TAG=%s", projectImageTag),
+		}
+	}
 )
 
 // TestE2E runs the end-to-end (e2e) test suite for the project. These tests execute in an isolated,
@@ -54,14 +62,15 @@ func TestE2E(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	By("building the manager(Operator) image")
-	cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectImage))
+	cmd := exec.Command("make", makeImageVars("docker-build")...)
 	_, err := utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
 
 	// TODO(user): If you want to change the e2e test vendor from Kind, ensure the image is
 	// built and available before running the tests. Also, remove the following block.
 	By("loading the manager(Operator) image on Kind")
-	err = utils.LoadImageToKindClusterWithName(projectImage)
+	err = utils.LoadImageToKindClusterWithName(
+		fmt.Sprintf("%s%s:%s", projectRegistry, projectControllerImage, projectImageTag))
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager(Operator) image into Kind")
 
 	// The tests-e2e are intended to run on a temporary cluster that is created and destroyed for testing.

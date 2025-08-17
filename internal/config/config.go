@@ -8,12 +8,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/knadh/koanf/providers/rawbytes"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-
 	kyaml "github.com/knadh/koanf/parsers/yaml"
 	kfile "github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/knadh/koanf/v2"
 )
 
@@ -22,7 +19,6 @@ var defaultConfigYaml []byte
 
 var k = koanf.New(".")
 var _config *Config
-var _loggerConfig *zap.Config
 
 type Logger struct {
 	Level string `koanf:"level"`
@@ -49,26 +45,6 @@ func (c *Config) GetLogger(name string) Logger {
 	return Logger{
 		Level: c.Log.Level,
 	}
-}
-
-func GetNamedLogger(name string) (*zap.Logger, error) {
-	logger := GetConfig().GetLogger(name)
-
-	level, err := zap.ParseAtomicLevel(logger.Level)
-	if err != nil {
-		zap.S().With(zap.Error(err)).Warn("failed to parse log level for named logger, using info", zap.String("name", name))
-		level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
-	}
-	_loggerConfig.Level = level
-	l, err := _loggerConfig.Build()
-	if err != nil {
-		return nil, fmt.Errorf("error building named zap logger for %s: %w", name, err)
-	}
-	return l.Named(name), nil
-}
-
-func SetLoggerConfig(loggerConfig *zap.Config) {
-	_loggerConfig = loggerConfig
 }
 
 func LoadDefaultConfig() {

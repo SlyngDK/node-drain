@@ -106,10 +106,16 @@ spec:
           - name: config
             readOnly: true
             mountPath: /config
+          - name: plugins
+            readOnly: false
+            mountPath: /plugins
       volumes:
         - name: config
           secret:
             secretName: nodedrain-config
             optional: true
+        - name: plugins
+          emptyDir:
+            sizeLimit: 1G
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10

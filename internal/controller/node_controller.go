@@ -86,6 +86,18 @@ func NewNodeReconciler(client client.Client, schema *runtime.Scheme, restConfig 
 		return nil, fmt.Errorf("failed to create reboot manager: %w", err)
 	}
 
+	drainManager, err := utils.NewDrainManager()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create drain manager: %w", err)
+	}
+
+	if err = drainManager.LoadPluginsFromDir(); err != nil {
+		return nil, fmt.Errorf("failed to load plugins: %w", err)
+	}
+	if err = drainManager.InitPlugins(context.TODO()); err != nil {
+		return nil, fmt.Errorf("failed to initialize plugins: %w", err)
+	}
+
 	return &nodeReconciler{
 		Client:           client,
 		Scheme:           schema,
@@ -420,7 +432,7 @@ func (r *nodeReconciler) rescheduleController(ctx context.Context) error {
 
 func (r *nodeReconciler) isNextNode(ctx context.Context, l *zap.Logger, node *drainv1.Node) (bool, error) {
 	nodeList := &drainv1.NodeList{}
-	err := r.Client.List(ctx, nodeList, &client.ListOptions{})
+	err := r.List(ctx, nodeList)
 	if err != nil {
 		return false, err
 	}

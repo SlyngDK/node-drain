@@ -26,10 +26,8 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
-	"github.com/pkg/errors"
 	config "github.com/slyngdk/node-drain/internal/config"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -113,14 +111,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	l, loggerConfig, err := getLogger(conf.Log.Level, conf.Log.Format)
+	l, err := config.GetLogger(conf.Log.Level, conf.Log.Format)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Failed to create logger: %v\n", err)
 		os.Exit(1)
 	}
 	defer l.Sync() // nolint:errcheck
-	config.SetLoggerConfig(loggerConfig)
-	setGlobalLogger(l)
+	setGlobalLoggers(l)
 	setupLog := l.Named("setup")
 
 	nodeName := os.Getenv("POD_NODENAME")
@@ -304,40 +301,7 @@ func main() {
 
 }
 
-func getLogger(logLevel, logFormat string) (*zap.Logger, *zap.Config, error) {
-	level, err := zap.ParseAtomicLevel(logLevel)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to parse log level")
-	}
-
-	disableStackTrace := true
-	encoderConfig := zap.NewProductionEncoderConfig()
-
-	if logFormat == "json" {
-		disableStackTrace = false
-	}
-	if logFormat == "console" {
-		encoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	}
-
-	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	loggerConfig := zap.Config{
-		Level:             level,
-		Encoding:          logFormat,
-		EncoderConfig:     encoderConfig,
-		OutputPaths:       []string{"stdout"},
-		ErrorOutputPaths:  []string{"stderr"},
-		DisableStacktrace: disableStackTrace,
-	}
-
-	logger, err := loggerConfig.Build()
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to build logger")
-	}
-	return logger, &loggerConfig, nil
-}
-
-func setGlobalLogger(l *zap.Logger) {
+func setGlobalLoggers(l *zap.Logger) {
 	zap.ReplaceGlobals(l)
 	klog.ClearLogger()
 	klog.SetLogger(zapr.NewLogger(l.Named("kubeclient")))
