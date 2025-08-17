@@ -49,7 +49,7 @@ import (
 )
 
 const (
-	nodeDrainFinalizer = "nodedrain.k8s.slyng.dk/node"
+	nodeDrainFinalizer = utils.LabelPrefix + "/node"
 
 	currentStateField = "status.currentState"
 )
@@ -73,9 +73,10 @@ type nodeReconciler struct {
 	managerNamespace string
 	nodeName         string
 	rebootManager    *utils.RebootManager
+	drainManager     *utils.DrainManager
 }
 
-func NewNodeReconciler(client client.Client, schema *runtime.Scheme, restConfig *rest.Config, managerNamespace string, nameNode string) (*nodeReconciler, error) {
+func NewNodeReconciler(ctx context.Context, client client.Client, schema *runtime.Scheme, restConfig *rest.Config, managerNamespace string, nameNode string) (*nodeReconciler, error) {
 	l, err := config.GetNamedLogger("node")
 	if err != nil {
 		return nil, err
@@ -86,16 +87,9 @@ func NewNodeReconciler(client client.Client, schema *runtime.Scheme, restConfig 
 		return nil, fmt.Errorf("failed to create reboot manager: %w", err)
 	}
 
-	drainManager, err := utils.NewDrainManager()
+	drainManager, err := utils.NewDrainManager(ctx, client, restConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create drain manager: %w", err)
-	}
-
-	if err = drainManager.LoadPluginsFromDir(); err != nil {
-		return nil, fmt.Errorf("failed to load plugins: %w", err)
-	}
-	if err = drainManager.InitPlugins(context.TODO()); err != nil {
-		return nil, fmt.Errorf("failed to initialize plugins: %w", err)
 	}
 
 	return &nodeReconciler{
@@ -106,6 +100,7 @@ func NewNodeReconciler(client client.Client, schema *runtime.Scheme, restConfig 
 		managerNamespace: managerNamespace,
 		nodeName:         nameNode,
 		rebootManager:    rebootManager,
+		drainManager:     drainManager,
 	}, nil
 }
 
@@ -142,10 +137,6 @@ func (r *nodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Node object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.0/pkg/reconcile
@@ -340,7 +331,31 @@ func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1
 	}
 
 	if node.Status.CurrentState == drainv1.NodeCurrentStateNext {
-		err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateDraining)
+
+		// Check if cluster is healthy before starting drain
+		healthy, err := r.drainManager.IsHealthy(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check if cluster is healthy: %w", err)
+		}
+		if !healthy {
+			return nil, fmt.Errorf("cluster is not healthy")
+		}
+
+		// Check if drain of node is ok
+		drainOk, err := r.drainManager.IsDrainOk(ctx, node.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check if node(%s) is ok to drain: %w", node.Name, err)
+		}
+		if !drainOk {
+			return nil, fmt.Errorf("node(%s) is not ok to drain", node.Name)
+		}
+
+		err = r.rebootManager.CleanupNode(ctx, node.Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to cleanup node(%s) for reboot manager pods: %w", node.Name, err)
+		}
+
+		err = r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateDraining)
 		if err != nil {
 			return nil, err
 		}
@@ -357,12 +372,17 @@ func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1
 
 	if r.nodeName == node.Name {
 		l.Info("Running on the node which is about to be drained")
-		// TODO stop this controller after Cordon of the node
 		err := r.rescheduleController(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to reschedule controller: %w", err)
 		}
 		return &ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	}
+
+	// Run Plugin PreDrain
+	err := r.drainManager.RunPreDrain(ctx, node.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to run plugin PreDrain for node(%s): %w", node.Name, err)
 	}
 
 	// TODO Ensure node is drained

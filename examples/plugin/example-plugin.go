@@ -11,7 +11,7 @@ type ExampleDrainPlugin struct {
 	logger hclog.Logger
 }
 
-func (e ExampleDrainPlugin) Init(
+func (e *ExampleDrainPlugin) Init(
 	ctx context.Context,
 	logger hclog.Logger,
 	settings plugins.DrainPluginSettings) (plugins.DrainPluginInfo, error) {
@@ -23,27 +23,27 @@ func (e ExampleDrainPlugin) Init(
 	}, nil
 }
 
-func (e ExampleDrainPlugin) IsSupported(ctx context.Context) (bool, error) {
+func (e *ExampleDrainPlugin) IsSupported(ctx context.Context) (bool, error) {
 	e.logger.Debug("IsSupported()")
-	return false, nil
+	return true, nil
 }
 
-func (e ExampleDrainPlugin) IsHealthy(ctx context.Context) (bool, error) {
+func (e *ExampleDrainPlugin) IsHealthy(ctx context.Context) (bool, error) {
 	e.logger.Debug("IsHealthy()")
 	return true, nil
 }
 
-func (e ExampleDrainPlugin) IsDrainOk(ctx context.Context, nodeName string) (bool, error) {
+func (e *ExampleDrainPlugin) IsDrainOk(ctx context.Context, nodeName string) (bool, error) {
 	e.logger.Debug("IsDrainOk()")
 	return true, nil
 }
 
-func (e ExampleDrainPlugin) PreDrain(ctx context.Context, nodeName string) error {
+func (e *ExampleDrainPlugin) PreDrain(ctx context.Context, nodeName string) error {
 	e.logger.Debug("PreDrain()")
 	return nil
 }
 
-func (e ExampleDrainPlugin) PostDrain(ctx context.Context, nodeName string) error {
+func (e *ExampleDrainPlugin) PostDrain(ctx context.Context, nodeName string) error {
 	e.logger.Debug("PostDrain()")
 	return nil
 }

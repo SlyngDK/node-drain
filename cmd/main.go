@@ -251,7 +251,10 @@ func main() {
 		setupLog.With(zap.Error(err)).Fatal("unable to create new manager")
 	}
 
+	ctx := ctrl.SetupSignalHandler()
+
 	nodeReconciler, err := controller.NewNodeReconciler(
+		ctx,
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		mgr.GetConfig(),
@@ -295,7 +298,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.With(zap.Error(err)).Fatal("problem running manager")
 	}
 

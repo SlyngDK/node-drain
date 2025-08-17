@@ -83,7 +83,7 @@ var _ = Describe("Node Controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, kubeNode)).To(Succeed())
 
-			controllerReconciler, err := NewNodeReconciler(k8sClient, k8sClient.Scheme(), cfg, managerNamespace, "node-test")
+			controllerReconciler, err := NewNodeReconciler(ctx, k8sClient, k8sClient.Scheme(), cfg, managerNamespace, "node-test")
 			Expect(err).NotTo(HaveOccurred())
 
 			res, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

@@ -222,7 +222,8 @@ func logJsonLog(l *zap.Logger, line string) error {
 	return nil
 }
 
-func PluginOutputMonitor(l *zap.Logger) io.Writer {
+func PluginOutputMonitor(streamName string, l *zap.Logger) io.Writer {
+	l = l.WithOptions(zap.WithCaller(false), zap.AddStacktrace(zap.FatalLevel)).Named(streamName)
 	reader, writer := io.Pipe()
 
 	go func() {

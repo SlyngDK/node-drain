@@ -46,7 +46,7 @@ func NewRebootManager(l *zap.Logger, client client.Client, restConfig *rest.Conf
 
 func (r *RebootManager) IsRebootRequired(ctx context.Context, nodeName string) (bool, error) {
 	defer func(r *RebootManager, ctx context.Context) {
-		err := r.cleanup(ctx)
+		err := r.cleanup(ctx, "")
 		if err != nil {
 			r.l.Error("failed to cleanup", zap.Error(err))
 		}
@@ -95,7 +95,7 @@ func (r *RebootManager) rebootRequiredPod(nodeName string) *corev1.Pod {
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "reboot-required-",
 			Namespace:    r.namespace,
-			Labels:       map[string]string{"kubenodedrainer.cego.dk/component": "reboot-required"},
+			Labels:       map[string]string{LabelComponent: "reboot-required"},
 		},
 		Spec: corev1.PodSpec{
 			Tolerations: []corev1.Toleration{{
@@ -139,7 +139,7 @@ func (r *RebootManager) rebootRequiredPod(nodeName string) *corev1.Pod {
 
 func (r *RebootManager) RebootNode(ctx context.Context, nodeName string) error {
 	defer func(r *RebootManager, ctx context.Context) {
-		err := r.cleanup(ctx)
+		err := r.cleanup(ctx, "")
 		if err != nil {
 			r.l.Error("failed to cleanup", zap.Error(err))
 		}
@@ -176,7 +176,7 @@ func (r *RebootManager) rebootNodePod(nodeName string) *corev1.Pod {
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "reboot-",
 			Namespace:    r.namespace,
-			Labels:       map[string]string{"kubenodedrainer.cego.dk/component": "reboot"},
+			Labels:       map[string]string{LabelComponent: "reboot"},
 			Annotations:  map[string]string{"container.apparmor.security.beta.kubernetes.io/shell": "unconfined"},
 		},
 		Spec: corev1.PodSpec{
@@ -210,16 +210,27 @@ func (r *RebootManager) rebootNodePod(nodeName string) *corev1.Pod {
 	}
 }
 
-func (r *RebootManager) cleanup(ctx context.Context) error {
+func (r *RebootManager) CleanupNode(ctx context.Context, nodeName string) error {
+	return r.cleanup(ctx, nodeName)
+}
+
+func (r *RebootManager) cleanup(ctx context.Context, nodeName string) error {
 	var labelSelector labels.Selector = labels.ValidatedSetSelector{}
-	requirement, err := labels.NewRequirement("kubenodedrainer.cego.dk/component", selection.In, []string{"reboot-required", "reboot"})
+
+	requirement, err := labels.NewRequirement(LabelComponent, selection.In, []string{"reboot-required", "reboot"})
 	if err != nil {
 		return err
 	}
 	labelSelector = labelSelector.Add(*requirement)
-	pods, err := r.clientSet.CoreV1().Pods(r.namespace).List(ctx, metav1.ListOptions{
+	options := metav1.ListOptions{
 		LabelSelector: labelSelector.String(),
-	})
+	}
+
+	if nodeName != "" {
+		options.FieldSelector = fmt.Sprintf("spec.nodeName=%s", nodeName)
+	}
+
+	pods, err := r.clientSet.CoreV1().Pods(r.namespace).List(ctx, options)
 	if err != nil {
 		return errors.Wrap(err, "failed to get reboot required pods running on node")
 	}

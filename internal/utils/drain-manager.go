@@ -8,30 +8,60 @@ import (
 	"path/filepath"
 
 	"github.com/hashicorp/go-plugin"
+	"github.com/pkg/errors"
 	"github.com/slyngdk/node-drain/api/plugins"
 	"github.com/slyngdk/node-drain/internal/config"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	kClient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type drainManager struct {
-	l             *zap.Logger
-	pluginClients map[string]*plugin.Client
-	drainClients  map[string]*plugins.DrainClient
+type drainClientInfo struct {
+	*plugins.DrainClient
+	info *plugins.DrainPluginInfo
 }
 
-func NewDrainManager() (*drainManager, error) {
+type DrainManager struct {
+	l             *zap.Logger
+	client        kClient.Client
+	clientSet     *kubernetes.Clientset
+	pluginClients map[string]*plugin.Client
+	drainClients  map[string]drainClientInfo
+}
+
+func NewDrainManager(ctx context.Context, client kClient.Client, restConfig *rest.Config) (*DrainManager, error) {
 	l, err := config.GetNamedLogger("drain-plugin-client")
 	if err != nil {
 		return nil, err
 	}
 
-	return &drainManager{
-		l: l,
-	}, nil
+	clientSet, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	d := &DrainManager{
+		l:            l,
+		client:       client,
+		clientSet:    clientSet,
+		drainClients: make(map[string]drainClientInfo),
+	}
+
+	err = d.loadPluginsFromDir(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load plugins: %w", err)
+	}
+
+	return d, nil
 }
 
-func (d *drainManager) LoadPluginsFromDir() error {
+func (d *DrainManager) loadPluginsFromDir(ctx context.Context) error {
 	path := "/plugins"
+
+	d.l.Debug("Loading plugins from path", zap.String("plugin.path", path))
 
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
@@ -53,8 +83,10 @@ func (d *drainManager) LoadPluginsFromDir() error {
 		}
 		if filepath.Ext(e.Name()) == ".so" {
 			pluginPath := filepath.Join(path, e.Name())
+			pluginBase := filepath.Base(pluginPath)
 
-			pluginLogger := d.l.With(zap.String("plugin", filepath.Base(pluginPath)))
+			pluginLogger := d.l.With(zap.String("plugin.file", pluginBase))
+			pluginLogger.Debug("Creating new client for plugin")
 			client := plugin.NewClient(&plugin.ClientConfig{
 				HandshakeConfig: plugins.Handshake,
 				VersionedPlugins: map[int]plugin.PluginSet{
@@ -64,52 +96,176 @@ func (d *drainManager) LoadPluginsFromDir() error {
 				},
 				Cmd:              exec.Command(pluginPath),
 				Managed:          true,
-				Stderr:           PluginOutputMonitor(pluginLogger),
-				SyncStdout:       PluginOutputMonitor(pluginLogger),
-				SyncStderr:       PluginOutputMonitor(pluginLogger),
+				Stderr:           PluginOutputMonitor("Stderr", pluginLogger),
+				SyncStdout:       PluginOutputMonitor("SyncStdout", pluginLogger),
+				SyncStderr:       PluginOutputMonitor("SyncStdout", pluginLogger),
 				AllowedProtocols: []plugin.Protocol{plugin.ProtocolGRPC},
 				Logger:           Wrap(pluginLogger),
 			})
-
 			foundClients[pluginPath] = client
+
+			info, drainClient, err := d.initPlugin(ctx, pluginLogger, pluginBase, client)
+			if err != nil {
+				return fmt.Errorf("failed to initialize plugin %s: %w", pluginBase, err)
+			}
+
+			if _, ok := d.drainClients[info.ID]; ok {
+				return fmt.Errorf("drain plugin %s(%s) already initialized", pluginBase, info.ID)
+			}
+			d.drainClients[info.ID] = drainClientInfo{drainClient, info}
 		}
 	}
 	d.pluginClients = foundClients
 	return nil
 }
 
-func (d *drainManager) InitPlugins(ctx context.Context) error {
-	d.drainClients = make(map[string]*plugins.DrainClient)
-	for p, client := range d.pluginClients {
-		pluginLogger := d.l.With(zap.String("plugin", p))
-		c, err := client.Client()
+func (d *DrainManager) initPlugin(ctx context.Context, l *zap.Logger, pluginBase string, client *plugin.Client) (*plugins.DrainPluginInfo, *plugins.DrainClient, error) {
+	l.Debug("Initializing plugin")
+	c, err := client.Client()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get client for plugin %s: %w", pluginBase, err)
+	}
+
+	l.Debug("Pinging plugin")
+	if err = c.Ping(); err != nil {
+		return nil, nil, fmt.Errorf("failed to ping plugin %s: %w", pluginBase, err)
+	}
+
+	l.Debug("Getting instance of drain plugin")
+	v, err := c.Dispense("drain")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to dispense plugin %s: %w", pluginBase, err)
+	}
+
+	drainClient, ok := v.(*plugins.DrainClient)
+	if !ok {
+		return nil, nil, fmt.Errorf("expected drain plugin %s: %T", pluginBase, v)
+	}
+
+	l.Debug("Calling drain plugin Init()")
+	info, err := drainClient.Init(ctx, Wrap(l), plugins.DrainPluginSettings{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to init plugin %s: %w", pluginBase, err)
+	}
+
+	if info.ID == "" {
+		return nil, nil, fmt.Errorf("drain plugin %s has no ID", pluginBase)
+	}
+	return &info, drainClient, nil
+}
+
+func (d *DrainManager) IsClusterNodesHealthy(ctx context.Context) (bool, error) {
+	d.l.Debug("Checking if cluster nodes are healthy")
+	nodes, err := d.clientSet.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return false, err
+	}
+
+	allNodesAreReady := true
+
+	for _, node := range nodes.Items {
+		for _, condition := range node.Status.Conditions {
+			if condition.Type == corev1.NodeReady {
+				if condition.Status != corev1.ConditionTrue {
+					d.l.Warn("node is not ready", zap.String("node.name", node.Name), zap.String("node.ready", string(condition.Status)))
+					allNodesAreReady = false
+				}
+			}
+		}
+	}
+	return allNodesAreReady, nil
+}
+
+func (d *DrainManager) IsHealthy(ctx context.Context) (bool, error) {
+	d.l.Debug("Checking if cluster is healthy, including drain plugins.")
+	healthy, err := d.IsClusterNodesHealthy(ctx)
+	if !healthy || err != nil {
+		return false, err
+	}
+
+	allModulesHealthy := true
+
+	for id, client := range d.drainClients {
+		l := d.l.With(zap.String("plugin.id", id))
+		l.Debug("Checking if drain plugin is supported")
+		isSupported, err := client.IsSupported(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get client for plugin %s: %w", p, err)
+			return false, err
+		}
+		if !isSupported {
+			d.l.Debug("Plugin not supported")
+			continue
 		}
 
-		if err = c.Ping(); err != nil {
-			return fmt.Errorf("failed to ping plugin %s: %w", p, err)
-		}
-
-		v, err := c.Dispense("drain")
+		l.Debug("Checking if drain plugin is healthy")
+		isHealthy, err := client.IsHealthy(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to dispense plugin %s: %w", p, err)
+			return false, err
 		}
-
-		drainClient, ok := v.(*plugins.DrainClient)
-		if !ok {
-			return fmt.Errorf("expected drain plugin %s: %T", p, v)
+		if !isHealthy {
+			d.l.Warn("Plugin is not healthy")
+			allModulesHealthy = false
+			continue
 		}
+	}
 
-		info, err := drainClient.Init(ctx, Wrap(pluginLogger), plugins.DrainPluginSettings{})
+	return allModulesHealthy, err
+}
+
+func (d *DrainManager) IsDrainOk(ctx context.Context, nodeName string) (bool, error) {
+	l := d.l.With(zap.String("node.name", nodeName))
+	l.Debug("Checking if drain is OK")
+	allModulesReadyToDrain := true
+
+	for id, client := range d.drainClients {
+		lp := l.With(zap.String("plugin.id", id))
+		lp.Debug("Checking if drain plugin is supported")
+		isSupported, err := client.IsSupported(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to init plugin %s: %w", p, err)
+			return false, err
+		}
+		if !isSupported {
+			d.l.Debug("Plugin not supported")
+			continue
 		}
 
-		// TODO Use info
-		_ = info
+		isDrainOk, err := client.IsDrainOk(ctx, nodeName)
+		if err != nil {
+			return false, err
+		}
+		if !isDrainOk {
+			lp.Warn("plugin is not ready to be drained")
+			allModulesReadyToDrain = false
+			continue
+		}
+	}
 
-		d.drainClients[p] = drainClient
+	return allModulesReadyToDrain, nil
+}
+
+func (d *DrainManager) RunPreDrain(ctx context.Context, nodeName string) error {
+	l := d.l.With(zap.String("node.name", nodeName))
+	l.Debug("Run PreDrain")
+
+	for id, client := range d.drainClients {
+		lp := l.With(zap.String("plugin.id", id))
+		lp.Debug("Checking if drain plugin is supported")
+		isSupported, err := client.IsSupported(ctx)
+		if err != nil {
+			return err
+		}
+		if !isSupported {
+			d.l.Debug("Plugin not supported")
+			continue
+		}
+
+		lp.Debug("Running plugin PreDrain")
+		err = client.PreDrain(ctx, nodeName)
+		if err != nil {
+			lp.Debug("Plugin PreDrain failed", zap.Error(err))
+			return errors.Wrapf(err, "failed PreDrain on plugin: %s", id)
+		}
+		lp.Debug("Plugin PreDrain succeeded without errors")
 	}
 	return nil
 }
@@ -139,7 +295,7 @@ func (d *drainManager) InitPlugins(ctx context.Context) error {
 // }
 //
 // func (d *DrainManager) IsHealthy(ctx context.Context) (healthy bool, err error) {
-// 	healthy, err = d.IsClusterHealthy(ctx)
+// 	healthy, err = d.IsClusterNodesHealthy(ctx)
 // 	if !healthy || err != nil {
 // 		return false, err
 // 	}
@@ -239,7 +395,7 @@ func (d *drainManager) InitPlugins(ctx context.Context) error {
 // 	b = backoff.WithContext(b, ctx)
 //
 // 	isClusterHealty := func() error {
-// 		healthy, err := d.IsClusterHealthy(ctx)
+// 		healthy, err := d.IsClusterNodesHealthy(ctx)
 // 		if err != nil {
 // 			d.l.Error("error checking if cluster is healthy", zap.Error(err))
 // 			return err
@@ -280,7 +436,7 @@ func (d *drainManager) InitPlugins(ctx context.Context) error {
 // 	return nil
 // }
 //
-// func (d *DrainManager) IsClusterHealthy(ctx context.Context) (bool, error) {
+// func (d *DrainManager) IsClusterNodesHealthy(ctx context.Context) (bool, error) {
 // 	nodes, _ := d.kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 //
 // 	allNodesAreReady := true
