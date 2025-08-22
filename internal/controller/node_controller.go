@@ -169,7 +169,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		// The object is being deleted
 		if controllerutil.ContainsFinalizer(node, nodeDrainFinalizer) {
 			// our finalizer is present, so lets handle any external dependency
-			// TODO Handle if node is drained, etc ...
+			// TODO Handle if node is drained, k8s node removed, etc ...
 
 			// remove our finalizer from the list and update it.
 			controllerutil.RemoveFinalizer(node, nodeDrainFinalizer)
@@ -182,34 +182,28 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, nil
 	}
 
-	if (!kubeNode.Spec.Unschedulable || node.Spec.State == drainv1.NodeStateActive) && node.Status.Drained {
+	if !kubeNode.Spec.Unschedulable && node.Status.Drained {
 		l.Debug("node is not unschedulable, but is still drained, updating drain status.")
 		if err := r.setDrained(ctx, node, false); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
+	if ok, result, err := r.undrain(ctx, l, node, kubeNode); !ok {
+		return result, err
+	}
+
 	switch node.Spec.State {
 	case drainv1.NodeStateActive:
-		if kubeNode.Spec.Unschedulable {
-			patch := client.MergeFrom(kubeNode.DeepCopy())
-			kubeNode.Spec.Unschedulable = false
-			if err := r.Patch(ctx, kubeNode, patch); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, nil
+		if err := r.setUnschedulable(ctx, kubeNode, false); err != nil {
+			return ctrl.Result{}, err
 		}
 		if err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateOk); err != nil {
 			return ctrl.Result{}, err
 		}
 	case drainv1.NodeStateCordoned:
-		if !kubeNode.Spec.Unschedulable {
-			patch := client.MergeFrom(kubeNode.DeepCopy())
-			kubeNode.Spec.Unschedulable = true
-			if err := r.Patch(ctx, kubeNode, patch); err != nil {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{}, nil
+		if err := r.setUnschedulable(ctx, kubeNode, true); err != nil {
+			return ctrl.Result{}, err
 		}
 		if err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateCordoned); err != nil {
 			return ctrl.Result{}, err
@@ -301,6 +295,17 @@ func (r *nodeReconciler) setCurrentState(ctx context.Context, l *zap.Logger, nod
 	return nil
 }
 
+func (r *nodeReconciler) setUnschedulable(ctx context.Context, kubeNode *corev1.Node, unschedulable bool) error {
+	if kubeNode.Spec.Unschedulable != unschedulable {
+		patch := client.MergeFrom(kubeNode.DeepCopy())
+		kubeNode.Spec.Unschedulable = unschedulable
+		if err := r.Patch(ctx, kubeNode, patch); err != nil {
+			return fmt.Errorf("failed to update unschedulable status on node: %w", err)
+		}
+	}
+	return nil
+}
+
 func (r *nodeReconciler) checkRebootRequired(ctx context.Context, node *drainv1.Node, l *zap.Logger) error {
 	rebootCheckInterval := config.GetKoanf().Duration("reboot.checkInterval")
 	if rebootCheckInterval < 5*time.Minute {
@@ -363,9 +368,7 @@ func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1
 
 	if !kubeNode.Spec.Unschedulable {
 		l.Info("Disable scheduling on node")
-		patch := client.MergeFrom(kubeNode.DeepCopy())
-		kubeNode.Spec.Unschedulable = true
-		if err := r.Patch(ctx, kubeNode, patch); err != nil {
+		if err := r.setUnschedulable(ctx, kubeNode, true); err != nil {
 			return nil, err
 		}
 	}
@@ -432,6 +435,60 @@ func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1
 	}
 
 	return nil, nil
+}
+
+func (r *nodeReconciler) undrain(ctx context.Context, l *zap.Logger, node *drainv1.Node, kubeNode *corev1.Node) (bool, ctrl.Result, error) {
+	if node.Status.CurrentState == drainv1.NodeCurrentStateUndraining {
+		if kubeNode.Spec.Unschedulable {
+			healthy, err := r.drainManager.IsClusterNodesHealthy(ctx)
+			if err != nil {
+				l.Error("error checking if cluster is healthy", zap.Error(err))
+				return false, ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+			if !healthy {
+				l.Debug("cluster nodes is not healthy, waiting for nodes to be healthy before enabling scheduling")
+				return false, ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+
+			if err := r.setUnschedulable(ctx, kubeNode, false); err != nil {
+				return false, ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
+		}
+
+		if err := r.drainManager.RunPostDrain(ctx, node.Name); err != nil {
+			l.Warn("failed to run PostDrain for node", zap.Error(err))
+			return false, ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+
+		if err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateOk); err != nil {
+			l.Debug("failed to set current state on node", zap.Error(err))
+			return false, ctrl.Result{}, err
+		}
+
+		return true, ctrl.Result{}, nil
+	}
+
+	undrain := false
+	if node.Status.CurrentState == drainv1.NodeCurrentStateDrained || node.Status.CurrentState == drainv1.NodeCurrentStateDraining {
+		// Check need for undrain
+		switch node.Spec.State {
+		case drainv1.NodeStateActive:
+			undrain = true
+		case drainv1.NodeStateDrained, drainv1.NodeStateCordoned:
+			break
+		default:
+			return false, ctrl.Result{}, fmt.Errorf("unhandled state for undrain: %s", node.Spec.State)
+		}
+	}
+
+	if undrain {
+		err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateUndraining)
+		if err != nil {
+			return false, ctrl.Result{}, err
+		}
+		return false, ctrl.Result{RequeueAfter: 1}, nil
+	}
+	return true, ctrl.Result{}, nil
 }
 
 func (r *nodeReconciler) rescheduleController(ctx context.Context) error {

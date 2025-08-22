@@ -1,13 +1,11 @@
 package utils
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -201,7 +199,6 @@ func logJsonLog(l *zap.Logger, line string) error {
 	if ce == nil {
 		return nil
 	}
-	ce.Caller = zapcore.EntryCaller{}
 
 	if v, ok := raw["@timestamp"]; ok {
 		t, err := time.Parse("2006-01-02T15:04:05.000000Z07:00", v.(string))
@@ -220,42 +217,4 @@ func logJsonLog(l *zap.Logger, line string) error {
 
 	ce.Write(fields...)
 	return nil
-}
-
-func PluginOutputMonitor(streamName string, l *zap.Logger) io.Writer {
-	l = l.WithOptions(zap.WithCaller(false), zap.AddStacktrace(zap.FatalLevel)).Named(streamName)
-	reader, writer := io.Pipe()
-
-	go func() {
-		scanner := bufio.NewScanner(reader)
-		scanner.Buffer(make([]byte, 1024), 1024*1024) // 1MB max buffer
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if len(line) == 0 {
-				continue
-			}
-
-			err := logJsonLog(l, line)
-			if err != nil {
-				switch line := line; {
-				case strings.HasPrefix(line, "[TRACE]"):
-					l.Log(config.TraceLevel, line)
-				case strings.HasPrefix(line, "[DEBUG]"):
-					l.Debug(line)
-				case strings.HasPrefix(line, "[INFO]"):
-					l.Info(line)
-				case strings.HasPrefix(line, "[WARN]"):
-					l.Warn(line)
-				case strings.HasPrefix(line, "[ERROR]"):
-					l.Error(line)
-				case strings.HasPrefix(line, "panic: ") || strings.HasPrefix(line, "fatal error: "):
-					l.Error(line)
-				default:
-					l.Info(line)
-				}
-			}
-		}
-	}()
-
-	return writer
 }

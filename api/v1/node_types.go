@@ -60,12 +60,13 @@ func (c NodeCurrentState) WorkState() bool {
 }
 
 const (
-	NodeCurrentStateOk       NodeCurrentState = "OK"
-	NodeCurrentStateCordoned NodeCurrentState = "Cordoned"
-	NodeCurrentStateQueued   NodeCurrentState = "Queued"
-	NodeCurrentStateNext     NodeCurrentState = "Next"
-	NodeCurrentStateDraining NodeCurrentState = "Draining"
-	NodeCurrentStateDrained  NodeCurrentState = "Drained"
+	NodeCurrentStateOk         NodeCurrentState = "OK"
+	NodeCurrentStateCordoned   NodeCurrentState = "Cordoned"
+	NodeCurrentStateQueued     NodeCurrentState = "Queued"
+	NodeCurrentStateNext       NodeCurrentState = "Next"
+	NodeCurrentStateDraining   NodeCurrentState = "Draining"
+	NodeCurrentStateDrained    NodeCurrentState = "Drained"
+	NodeCurrentStateUndraining NodeCurrentState = "Undraining"
 )
 
 var (
@@ -76,6 +77,7 @@ var (
 		NodeCurrentStateNext,
 		NodeCurrentStateDraining,
 		NodeCurrentStateDrained,
+		NodeCurrentStateUndraining,
 	}
 )
 
@@ -103,7 +105,7 @@ type NodeStatus struct {
 
 	// +kubebuilder:validation:Required
 	// +kubebuilder:default=OK
-	// +kubebuilder:validation:Enum=OK;Cordoned;Queued;Next;Draining;Drained
+	// +kubebuilder:validation:Enum=OK;Cordoned;Queued;Next;Draining;Drained;Undraining
 	CurrentState NodeCurrentState `json:"currentState,omitempty"`
 }
 
@@ -121,9 +123,9 @@ type Condition struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,shortName=nd
 // +kubebuilder:printcolumn:name="Requested State",type="string",JSONPath=".spec.state"
+// +kubebuilder:printcolumn:name="CurrentState",type="string",JSONPath=".status.currentState"
 // +kubebuilder:printcolumn:name="Drained",type="boolean",JSONPath=".status.drained"
 // +kubebuilder:printcolumn:name="Reboot Required",type="boolean",JSONPath=".status.rebootRequired"
-// +kubebuilder:printcolumn:name="Reboot Required Last Checked",type="string",JSONPath=".status.rebootRequiredLastChecked"
 
 // Node is the Schema for the nodes API
 type Node struct {

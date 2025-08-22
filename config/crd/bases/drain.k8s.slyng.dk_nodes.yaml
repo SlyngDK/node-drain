@@ -20,15 +20,15 @@ spec:
     - jsonPath: .spec.state
       name: Requested State
       type: string
+    - jsonPath: .status.currentState
+      name: CurrentState
+      type: string
     - jsonPath: .status.drained
       name: Drained
       type: boolean
     - jsonPath: .status.rebootRequired
       name: Reboot Required
       type: boolean
-    - jsonPath: .status.rebootRequiredLastChecked
-      name: Reboot Required Last Checked
-      type: string
     name: v1
     schema:
       openAPIV3Schema:
@@ -136,6 +136,7 @@ spec:
                 - Next
                 - Draining
                 - Drained
+                - Undraining
                 type: string
               drained:
                 default: false
