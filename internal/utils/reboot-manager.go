@@ -7,18 +7,17 @@ import (
 	"time"
 
 	mod "github.com/slyngdk/node-drain/internal/modules"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"k8s.io/apimachinery/pkg/selection"
-
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -45,13 +44,6 @@ func NewRebootManager(l *zap.Logger, client client.Client, restConfig *rest.Conf
 }
 
 func (r *RebootManager) IsRebootRequired(ctx context.Context, nodeName string) (bool, error) {
-	defer func(r *RebootManager, ctx context.Context) {
-		err := r.cleanup(ctx, "")
-		if err != nil {
-			r.l.Error("failed to cleanup", zap.Error(err))
-		}
-	}(r, ctx)
-
 	if mod.GetNode(ctx, r.clientSet, nodeName) == nil {
 		return false, fmt.Errorf("node don't exists in cluster: %s", nodeName)
 	}
@@ -60,6 +52,12 @@ func (r *RebootManager) IsRebootRequired(ctx context.Context, nodeName string) (
 	if err != nil {
 		return false, errors.Wrap(err, "failed to create reboot-required pod")
 	}
+	defer func() {
+		err := r.clientSet.CoreV1().Pods(r.namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
+		if err != nil {
+			r.l.Error("failed to delete pod", zap.String("node.name", nodeName), zap.Error(err))
+		}
+	}()
 
 	err = wait.PollUntilContextTimeout(ctx, time.Second, 30*time.Second, false, mod.IsPodRunning(r.clientSet, pod.GetName(), pod.GetNamespace()))
 	if err != nil {
@@ -80,6 +78,7 @@ func (r *RebootManager) IsRebootRequired(ctx context.Context, nodeName string) (
 		Namespace: pod.Namespace,
 		Name:      pod.Name,
 	}, command, nil, stdout, stderr)
+	r.l.Debug("reboot-required pod output", zap.String("node.name", nodeName), zap.String("stdout", stdout.String()), zap.String("stderr", stderr.String()), zap.Error(err))
 	if err == nil {
 		rebootRequired = true
 	}
@@ -89,8 +88,6 @@ func (r *RebootManager) IsRebootRequired(ctx context.Context, nodeName string) (
 
 func (r *RebootManager) rebootRequiredPod(nodeName string) *corev1.Pod {
 	userId := int64(1000)
-	t := true
-	hostPathType := corev1.HostPathDirectory
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "reboot-required-",
@@ -122,14 +119,14 @@ func (r *RebootManager) rebootRequiredPod(nodeName string) *corev1.Pod {
 			SecurityContext: &corev1.PodSecurityContext{
 				RunAsUser:    &userId,
 				RunAsGroup:   &userId,
-				RunAsNonRoot: &t,
+				RunAsNonRoot: PtrTo(true),
 			},
 			Volumes: []corev1.Volume{{
 				Name: "host-var-run",
 				VolumeSource: corev1.VolumeSource{
 					HostPath: &corev1.HostPathVolumeSource{
 						Path: "/var/run/",
-						Type: &hostPathType,
+						Type: PtrTo(corev1.HostPathDirectory),
 					},
 				},
 			}},

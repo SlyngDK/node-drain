@@ -27,8 +27,10 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	config "github.com/slyngdk/node-drain/internal/config"
+	"github.com/slyngdk/node-drain/internal/utils"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -246,6 +248,13 @@ func main() {
 				},
 			},
 		},
+		NewClient: func(config *rest.Config, options client.Options) (client.Client, error) {
+			c, err := client.New(config, options)
+			if err != nil {
+				return nil, err
+			}
+			return client.WithFieldOwner(c, utils.GetFieldOwner(managerNamespace)), nil
+		},
 	})
 	if err != nil {
 		setupLog.With(zap.Error(err)).Fatal("unable to create new manager")
@@ -258,6 +267,7 @@ func main() {
 		mgr.GetClient(),
 		mgr.GetScheme(),
 		mgr.GetConfig(),
+		mgr.GetEventRecorderFor("nodedrain-controller"),
 		managerNamespace,
 		nodeName,
 	)

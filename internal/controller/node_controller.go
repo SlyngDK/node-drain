@@ -19,12 +19,14 @@ package controller
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"time"
 
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -54,21 +56,24 @@ const (
 	currentStateField = "status.currentState"
 )
 
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups="",resources=nodes/status,verbs=get
 // +kubebuilder:rbac:groups=drain.k8s.slyng.dk,resources=nodes,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=drain.k8s.slyng.dk,resources=nodes/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=drain.k8s.slyng.dk,resources=nodes/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",namespace=system,resources=pods,verbs=list;watch;create;get;delete;deletecollection
+// +kubebuilder:rbac:groups="",namespace=system,resources=pods/exec,verbs=create
 // +kubebuilder:rbac:groups="",resources=pods,verbs=list;delete;get
 // +kubebuilder:rbac:groups="",resources=pods/eviction,verbs=create
-// +kubebuilder:rbac:groups="apps",resources=daemonsets,verbs=get;
+// +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;
 
 // NodeReconciler reconciles a Node object
 type nodeReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
 	restConfig       *rest.Config
+	recorder         record.EventRecorder
 	l                *zap.Logger
 	managerNamespace string
 	nodeName         string
@@ -76,7 +81,7 @@ type nodeReconciler struct {
 	drainManager     *utils.DrainManager
 }
 
-func NewNodeReconciler(ctx context.Context, client client.Client, schema *runtime.Scheme, restConfig *rest.Config, managerNamespace string, nameNode string) (*nodeReconciler, error) {
+func NewNodeReconciler(ctx context.Context, client client.Client, schema *runtime.Scheme, restConfig *rest.Config, recorder record.EventRecorder, managerNamespace string, nameNode string) (*nodeReconciler, error) {
 	l, err := config.GetNamedLogger("node")
 	if err != nil {
 		return nil, err
@@ -96,6 +101,7 @@ func NewNodeReconciler(ctx context.Context, client client.Client, schema *runtim
 		Client:           client,
 		Scheme:           schema,
 		restConfig:       restConfig,
+		recorder:         recorder,
 		l:                l,
 		managerNamespace: managerNamespace,
 		nodeName:         nameNode,
@@ -193,8 +199,19 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return result, err
 	}
 
+	// Check reboot
+	if err := r.checkRebootRequired(ctx, node, l); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	switch node.Spec.State {
 	case drainv1.NodeStateActive:
+		managerOfUnschedulable := r.getManagerOfUnschedulable(kubeNode)
+		if managerOfUnschedulable != "" && managerOfUnschedulable != utils.GetFieldOwner(managerOfUnschedulable) {
+			l.Warn("node is current cordon by another manager", zap.String("manager", managerOfUnschedulable))
+			r.recorder.Eventf(node, corev1.EventTypeWarning, "NodeNotSchedulable", "Node is current cordon by another manager: %s", managerOfUnschedulable)
+			return ctrl.Result{}, nil
+		}
 		if err := r.setUnschedulable(ctx, kubeNode, false); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -215,11 +232,6 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			}
 			return ctrl.Result{RequeueAfter: 1 * time.Second}, nil
 		}
-	}
-
-	// Check reboot
-	if err := r.checkRebootRequired(ctx, node, l); err != nil {
-		return ctrl.Result{}, err
 	}
 
 	if node.Status.CurrentState.WorkState() {
@@ -286,6 +298,10 @@ func (r *nodeReconciler) setDrained(ctx context.Context, node *drainv1.Node, dra
 }
 
 func (r *nodeReconciler) setCurrentState(ctx context.Context, l *zap.Logger, node *drainv1.Node, s drainv1.NodeCurrentState) error {
+	if node.Status.CurrentState == s {
+		return nil
+	}
+
 	l.Info("setting current state on node", zap.String("currentState", s.String()))
 	patch := client.MergeFrom(node.DeepCopy())
 	node.Status.CurrentState = s
@@ -325,6 +341,9 @@ func (r *nodeReconciler) checkRebootRequired(ctx context.Context, node *drainv1.
 		node.Status.RebootRequiredLastChecked = &metav1.Time{Time: time.Now()}
 		if err = r.Status().Patch(ctx, node, patch); err != nil {
 			return fmt.Errorf("failed to update node reboot required last checked: %w", err)
+		}
+		if required {
+			r.recorder.Eventf(node, corev1.EventTypeNormal, "RebootRequired", "Reboot is required")
 		}
 	}
 	return nil
@@ -530,4 +549,30 @@ func (r *nodeReconciler) isNextNode(ctx context.Context, l *zap.Logger, node *dr
 	}
 
 	return false, nil
+}
+
+func (r *nodeReconciler) getManagerOfUnschedulable(kubeNode *corev1.Node) string {
+	for _, field := range kubeNode.ManagedFields {
+		if field.Subresource != "" {
+			continue
+		}
+		if field.FieldsV1 != nil {
+			var f interface{}
+			err := json.Unmarshal(field.FieldsV1.Raw, &f)
+			if err != nil {
+				continue
+			}
+
+			if m, ok := f.(map[string]interface{}); ok {
+				if v, ok := m["f:spec"]; ok {
+					if s, ok := v.(map[string]interface{}); ok {
+						if _, ok := s["f:unschedulable"]; ok {
+							return field.Manager
+						}
+					}
+				}
+			}
+		}
+	}
+	return ""
 }

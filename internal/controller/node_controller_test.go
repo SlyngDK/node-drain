@@ -20,17 +20,17 @@ import (
 	"context"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/slyngdk/node-drain/internal/config"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	drainv1 "github.com/slyngdk/node-drain/api/v1"
 )
@@ -83,7 +83,12 @@ var _ = Describe("Node Controller", func() {
 			}
 			Expect(k8sClient.Create(ctx, kubeNode)).To(Succeed())
 
-			controllerReconciler, err := NewNodeReconciler(ctx, k8sClient, k8sClient.Scheme(), cfg, managerNamespace, "node-test")
+			c, err := cluster.New(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			recorderFor := c.GetEventRecorderFor("node-controller-test")
+			Expect(recorderFor).ShouldNot(BeNil())
+
+			controllerReconciler, err := NewNodeReconciler(ctx, k8sClient, k8sClient.Scheme(), cfg, recorderFor, managerNamespace, "node-test")
 			Expect(err).NotTo(HaveOccurred())
 
 			res, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
