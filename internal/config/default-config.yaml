@@ -1,0 +1,6 @@
+---
+log:
+  level: info
+  format: json
+reboot:
+  checkInterval: 12h

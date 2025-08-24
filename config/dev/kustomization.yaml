@@ -1,0 +1,34 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../default
+images:
+- name: controller
+  newName: localhost:5000/controller
+  newTag: latest
+patches:
+- patch: |
+    - op: replace
+      path: "/spec/template/spec/containers/0/imagePullPolicy"
+      value: Always
+    - op: replace
+      path: "/spec/template/spec/containers/0/image"
+      value: localhost:5000/controller
+    - op: add
+      path: "/spec/template/spec/initContainers"
+      value:
+        - name: example-plugins
+          image: localhost:5000/example-plugin
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: plugins
+              readOnly: false
+              mountPath: /plugins
+    - op: add
+      path: "/spec/template/spec/containers/0/env/-"
+      value:
+        name: NODEDRAIN_CONTAINERNODE
+        value: "true"
+  target:
+    kind: Deployment
+    name: controller-manager

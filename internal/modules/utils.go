@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"regexp"
+	"strings"
+
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
-	"regexp"
-	"strings"
 
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"

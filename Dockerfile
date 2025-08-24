@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.23.2 AS builder
+FROM golang:1.24.5 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -21,11 +21,24 @@ COPY internal/ internal/
 # was called. For example, if we call make docker-build in a local env which has the Apple Silicon M1 SO
 # the docker BUILDPLATFORM arg will be linux/arm64 when for Apple x86 it will be linux/amd64. Therefore,
 # by leaving it empty we can ensure that the container and binary shipped on it will have the same platform.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
+RUN --mount=type=cache,target=/root/.cache \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -o manager cmd/main.go
+
+
+FROM builder AS builder-plugin
+COPY examples/ examples/
+RUN --mount=type=cache,target=/root/.cache \
+    CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -o example-plugin.so examples/plugin/example-plugin.go
+
+FROM alpine:3.22.1 AS example-plugin
+WORKDIR /
+COPY --from=builder-plugin /workspace/example-plugin.so .
+USER 65532:65532
+CMD ["cp", "-v", "/example-plugin.so", "/plugins/example-plugin.so"]
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+FROM gcr.io/distroless/static:debug-nonroot AS controller
 WORKDIR /
 COPY --from=builder /workspace/manager .
 USER 65532:65532

@@ -1,0 +1,20 @@
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nodedrain-config
+  labels:
+    app.kubernetes.io/name: nodedrain
+    app.kubernetes.io/managed-by: kustomize
+stringData:
+  config.yaml: |
+    log:
+      loggers:
+        node:
+          level: debug
+        node-webhook:
+          level: debug
+        drain-plugin-client:
+          level: debug
+    reboot:
+      checkInterval: 5m

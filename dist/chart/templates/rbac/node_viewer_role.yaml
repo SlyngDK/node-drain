@@ -1,0 +1,24 @@
+{{- if .Values.rbac.enable }}
+# permissions for end users to view nodes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  name: node-viewer-role
+rules:
+- apiGroups:
+  - drain.k8s.slyng.dk
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - drain.k8s.slyng.dk
+  resources:
+  - nodes/status
+  verbs:
+  - get
+{{- end -}}

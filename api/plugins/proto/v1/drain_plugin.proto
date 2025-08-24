@@ -1,0 +1,48 @@
+syntax = "proto3";
+package api.plugins.proto.v1;
+
+option go_package = "api/plugins/proto/v1";
+
+message InitRequest {}
+
+message InitResponse {
+  string id = 1;
+}
+
+message IsSupportedResponse {
+  bool supported = 1;
+}
+
+message IsHealthyRequest {}
+message IsHealthyResponse {
+  bool healthy = 1;
+}
+
+message IsSupportedRequest {}
+
+message IsDrainOkResponse {
+  bool ok = 1;
+}
+
+message IsDrainOkRequest {
+  string node_name = 1;
+}
+
+message PreDrainRequest {
+  string node_name = 1;
+}
+message PreDrainResponse {}
+
+message PostDrainRequest {
+  string node_name = 1;
+}
+message PostDrainResponse {}
+
+service DrainService {
+  rpc Init(InitRequest) returns (InitResponse);
+  rpc IsSupported(IsSupportedRequest) returns (IsSupportedResponse);
+  rpc IsHealthy(IsHealthyRequest) returns (IsHealthyResponse);
+  rpc IsDrainOk(IsDrainOkRequest) returns (IsDrainOkResponse);
+  rpc PreDrain(PreDrainRequest) returns (PreDrainResponse);
+  rpc PostDrain(PostDrainRequest) returns (PostDrainResponse);
+}

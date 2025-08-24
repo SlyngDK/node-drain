@@ -23,17 +23,79 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-type NodeDrainStatus string
+type NodeState string
 
-const NodeDrainStatusQueued = "Queued"
-const NodeDrainStatusNext = "Next"
+func (c NodeState) String() string {
+	return string(c)
+}
+
+const (
+	NodeStateActive           NodeState = "Active"
+	NodeStateCordoned         NodeState = "Cordoned"
+	NodeStateDrained          NodeState = "Drained"
+	NodeStateRebootIfRequired NodeState = "RebootIfRequired"
+	// TODO Upgrade
+)
+
+func (c NodeState) Drain() bool {
+	switch c {
+	case NodeStateDrained, NodeStateRebootIfRequired:
+		return true
+	default:
+		return false
+	}
+}
 
 // NodeSpec defines the desired state of Node
 type NodeSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of Node. Edit node_types.go to remove/update
+	// +kubebuilder:validation:Required
+	// +kubebuilder:default=Active
+	// +kubebuilder:validation:Enum=Active;Cordoned;Drained;RebootIfRequired
+	State NodeState `json:"state,omitempty"`
+}
+type NodeCurrentState string
+
+func (c NodeCurrentState) String() string {
+	return string(c)
+}
+func (c NodeCurrentState) WorkState() bool {
+	switch c {
+	case NodeCurrentStateOk, NodeCurrentStateCordoned, NodeCurrentStateQueued:
+		return false
+	default:
+		return true
+	}
+}
+
+const (
+	NodeCurrentStateOk         NodeCurrentState = "OK"
+	NodeCurrentStateCordoned   NodeCurrentState = "Cordoned"
+	NodeCurrentStateQueued     NodeCurrentState = "Queued"
+	NodeCurrentStateNext       NodeCurrentState = "Next"
+	NodeCurrentStateDraining   NodeCurrentState = "Draining"
+	NodeCurrentStateDrained    NodeCurrentState = "Drained"
+	NodeCurrentStateUndraining NodeCurrentState = "Undraining"
+	NodeCurrentStateRebooting  NodeCurrentState = "Rebooting"
+)
+
+var (
+	nodeCurrentStates = [...]NodeCurrentState{
+		NodeCurrentStateOk,
+		NodeCurrentStateCordoned,
+		NodeCurrentStateQueued,
+		NodeCurrentStateNext,
+		NodeCurrentStateDraining,
+		NodeCurrentStateDrained,
+		NodeCurrentStateUndraining,
+		NodeCurrentStateRebooting,
+	}
+)
+
+func GetNodeCurrentStates() []NodeCurrentState {
+	return nodeCurrentStates[:]
 }
 
 // NodeStatus defines the observed state of Node
@@ -41,18 +103,44 @@ type NodeStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	RebootRequiredLastChecked *metav1.Time    `json:"rebootRequiredLastChecked,omitempty"`
-	RebootRequired            bool            `json:"rebootRequired"`
-	Status                    NodeDrainStatus `json:"status,omitempty"`
-	StatusChanged             *metav1.Time    `json:"statusChanged,omitempty"`
+	Conditions []Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+
+	// +optional
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=date-time
+	RebootRequiredLastChecked *metav1.Time `json:"rebootRequiredLastChecked,omitempty"`
+	// +optional
+	RebootRequired *bool `json:"rebootRequired"`
+
+	// +kubebuilder:validation:Required
+	// +kubebuilder:default=false
+	Drained bool `json:"drained"`
+
+	// +kubebuilder:validation:Required
+	// +kubebuilder:default=OK
+	// +kubebuilder:validation:Enum=OK;Cordoned;Queued;Next;Draining;Drained;Undraining;Rebooting
+	CurrentState NodeCurrentState `json:"currentState,omitempty"`
+
+	BootID string `json:"bootID,omitempty"`
+}
+
+type Condition struct {
+	metav1.Condition `json:",inline"`
+
+	// lastCheckTime is the last time the condition has been checked.
+	// +optional
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=date-time
+	LastCheckTime *metav1.Time `json:"lastCheckTime" protobuf:"bytes,4,opt,name=lastCheckTime"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster
-//+kubebuilder:printcolumn:name="Reboot Required",type="boolean",JSONPath=".status.rebootRequired"
-//+kubebuilder:printcolumn:name="Reboot Required Last Checked",type="string",JSONPath=".status.rebootRequiredLastChecked"
-//+kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.status"
+// +kubebuilder:resource:scope=Cluster,shortName=nd
+// +kubebuilder:printcolumn:name="Requested State",type="string",JSONPath=".spec.state"
+// +kubebuilder:printcolumn:name="CurrentState",type="string",JSONPath=".status.currentState"
+// +kubebuilder:printcolumn:name="Drained",type="boolean",JSONPath=".status.drained"
+// +kubebuilder:printcolumn:name="Reboot Required",type="boolean",JSONPath=".status.rebootRequired"
 
 // Node is the Schema for the nodes API
 type Node struct {
