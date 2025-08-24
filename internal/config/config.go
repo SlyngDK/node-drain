@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	kyaml "github.com/knadh/koanf/parsers/yaml"
+	kenv "github.com/knadh/koanf/providers/env/v2"
 	kfile "github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/knadh/koanf/v2"
@@ -33,6 +35,7 @@ type Config struct {
 	Reboot struct {
 		CheckInterval time.Duration `koanf:"checkInterval"`
 	}
+	ContainerNode bool `koanf:"containerNode"`
 }
 
 func (c *Config) GetLogger(name string) Logger {
@@ -56,6 +59,22 @@ func LoadDefaultConfig() {
 }
 
 func LoadConfig() (*Config, error) {
+
+	err := k.Load(kenv.Provider(".", kenv.Opt{
+		Prefix: "NODEDRAIN_",
+		TransformFunc: func(k, v string) (string, any) {
+			k = strings.ReplaceAll(strings.ToLower(strings.TrimPrefix(k, "NODEDRAIN_")), "_", ".")
+			if strings.Contains(v, " ") {
+				return k, strings.Split(v, " ")
+			}
+
+			return k, v
+		},
+	}), nil)
+	if err != nil {
+		return nil, err
+	}
+
 	loadConfigFiles := func() error {
 		configDir := "/config"
 		stat, err := os.Stat(configDir)
@@ -91,12 +110,12 @@ func LoadConfig() (*Config, error) {
 		return nil
 	}
 
-	if err := loadConfigFiles(); err != nil {
+	if err = loadConfigFiles(); err != nil {
 		return nil, err
 	}
 
 	var conf Config
-	err := k.Unmarshal("", &conf)
+	err = k.Unmarshal("", &conf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}

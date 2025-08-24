@@ -30,11 +30,21 @@ func (c NodeState) String() string {
 }
 
 const (
-	NodeStateActive   NodeState = "Active"
-	NodeStateCordoned NodeState = "Cordoned"
-	NodeStateRebooted NodeState = "Rebooted"
-	NodeStateDrained  NodeState = "Drained"
+	NodeStateActive           NodeState = "Active"
+	NodeStateCordoned         NodeState = "Cordoned"
+	NodeStateDrained          NodeState = "Drained"
+	NodeStateRebootIfRequired NodeState = "RebootIfRequired"
+	// TODO Upgrade
 )
+
+func (c NodeState) Drain() bool {
+	switch c {
+	case NodeStateDrained, NodeStateRebootIfRequired:
+		return true
+	default:
+		return false
+	}
+}
 
 // NodeSpec defines the desired state of Node
 type NodeSpec struct {
@@ -43,7 +53,7 @@ type NodeSpec struct {
 
 	// +kubebuilder:validation:Required
 	// +kubebuilder:default=Active
-	// +kubebuilder:validation:Enum=Active;Cordoned;Rebooted;Drained
+	// +kubebuilder:validation:Enum=Active;Cordoned;Drained;RebootIfRequired
 	State NodeState `json:"state,omitempty"`
 }
 type NodeCurrentState string
@@ -55,8 +65,9 @@ func (c NodeCurrentState) WorkState() bool {
 	switch c {
 	case NodeCurrentStateOk, NodeCurrentStateCordoned, NodeCurrentStateQueued:
 		return false
+	default:
+		return true
 	}
-	return true
 }
 
 const (
@@ -67,6 +78,7 @@ const (
 	NodeCurrentStateDraining   NodeCurrentState = "Draining"
 	NodeCurrentStateDrained    NodeCurrentState = "Drained"
 	NodeCurrentStateUndraining NodeCurrentState = "Undraining"
+	NodeCurrentStateRebooting  NodeCurrentState = "Rebooting"
 )
 
 var (
@@ -78,6 +90,7 @@ var (
 		NodeCurrentStateDraining,
 		NodeCurrentStateDrained,
 		NodeCurrentStateUndraining,
+		NodeCurrentStateRebooting,
 	}
 )
 
@@ -105,8 +118,10 @@ type NodeStatus struct {
 
 	// +kubebuilder:validation:Required
 	// +kubebuilder:default=OK
-	// +kubebuilder:validation:Enum=OK;Cordoned;Queued;Next;Draining;Drained;Undraining
+	// +kubebuilder:validation:Enum=OK;Cordoned;Queued;Next;Draining;Drained;Undraining;Rebooting
 	CurrentState NodeCurrentState `json:"currentState,omitempty"`
+
+	BootID string `json:"bootID,omitempty"`
 }
 
 type Condition struct {

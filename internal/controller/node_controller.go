@@ -91,6 +91,7 @@ func NewNodeReconciler(ctx context.Context, client client.Client, schema *runtim
 	if err != nil {
 		return nil, fmt.Errorf("failed to create reboot manager: %w", err)
 	}
+	_ = rebootManager.CleanupNode(ctx, "")
 
 	drainManager, err := utils.NewDrainManager(ctx, client, restConfig)
 	if err != nil {
@@ -188,15 +189,15 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		return ctrl.Result{}, nil
 	}
 
+	if ok, result, err := r.undrain(ctx, l, node, kubeNode); !ok {
+		return result, err
+	}
+
 	if !kubeNode.Spec.Unschedulable && node.Status.Drained {
 		l.Debug("node is not unschedulable, but is still drained, updating drain status.")
 		if err := r.setDrained(ctx, node, false); err != nil {
 			return ctrl.Result{}, err
 		}
-	}
-
-	if ok, result, err := r.undrain(ctx, l, node, kubeNode); !ok {
-		return result, err
 	}
 
 	// Check reboot
@@ -207,7 +208,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	switch node.Spec.State {
 	case drainv1.NodeStateActive:
 		managerOfUnschedulable := r.getManagerOfUnschedulable(kubeNode)
-		if managerOfUnschedulable != "" && managerOfUnschedulable != utils.GetFieldOwner(managerOfUnschedulable) {
+		if managerOfUnschedulable != "" && managerOfUnschedulable != utils.GetFieldOwner(r.managerNamespace) {
 			l.Warn("node is current cordon by another manager", zap.String("manager", managerOfUnschedulable))
 			r.recorder.Eventf(node, corev1.EventTypeWarning, "NodeNotSchedulable", "Node is current cordon by another manager: %s", managerOfUnschedulable)
 			return ctrl.Result{}, nil
@@ -225,7 +226,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		if err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateCordoned); err != nil {
 			return ctrl.Result{}, err
 		}
-	case drainv1.NodeStateDrained:
+	case drainv1.NodeStateDrained, drainv1.NodeStateRebootIfRequired:
 		if !node.Status.CurrentState.WorkState() && node.Status.CurrentState != drainv1.NodeCurrentStateQueued {
 			if err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateQueued); err != nil {
 				return ctrl.Result{}, err
@@ -235,13 +236,86 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	if node.Status.CurrentState.WorkState() {
-		if node.Spec.State == drainv1.NodeStateDrained && !node.Status.Drained {
+		if node.Spec.State == drainv1.NodeStateRebootIfRequired && !node.Status.Drained {
+			var err error
+			required := false
+			if node.Status.RebootRequiredLastChecked == nil ||
+				node.Status.RebootRequiredLastChecked.Time.IsZero() ||
+				node.Status.RebootRequiredLastChecked.Time.Before(time.Now().Add(-(2 * time.Minute))) {
+
+				required, err = r.isRebootRequired(ctx, node, l)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+			} else if node.Status.RebootRequired != nil {
+				required = *node.Status.RebootRequired
+			}
+
+			if !required {
+				l.Debug("Reboot is not required, setting node active")
+				err = r.setState(ctx, l, node, drainv1.NodeStateActive)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{}, nil
+			}
+		}
+		if node.Spec.State.Drain() && !node.Status.Drained {
 			result, err := r.drain(ctx, l, node, kubeNode)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
 			if result != nil {
 				return *result, nil
+			}
+		}
+
+		if node.Spec.State == drainv1.NodeStateRebootIfRequired {
+			if node.Status.CurrentState == drainv1.NodeCurrentStateDrained && node.Status.Drained {
+				l.Debug("Saving bootID before rebooting node")
+				err := r.setBootID(ctx, node, kubeNode)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+
+				l.Info("Rebooting node")
+				err = r.rebootManager.RebootNode(ctx, node.Name)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+
+				err = r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateRebooting)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{RequeueAfter: time.Minute}, nil
+			}
+			if node.Status.CurrentState == drainv1.NodeCurrentStateRebooting {
+				rebooted, err := r.rebootManager.IsNodeRebooted(ctx, kubeNode, node.Status.BootID)
+				if err != nil {
+					return ctrl.Result{}, err
+				}
+
+				if rebooted {
+					l.Info("node is rebooted")
+
+					patch := client.MergeFrom(node.DeepCopy())
+					node.Status.BootID = ""
+					node.Status.RebootRequired = utils.PtrTo(false)
+					node.Status.RebootRequiredLastChecked = &metav1.Time{Time: time.Now()}
+					if err = r.Status().Patch(ctx, node, patch); err != nil {
+						return ctrl.Result{}, fmt.Errorf("failed to update node reboot required last checked: %w", err)
+					}
+
+					err = r.setState(ctx, l, node, drainv1.NodeStateActive)
+					if err != nil {
+						return ctrl.Result{}, err
+					}
+					return ctrl.Result{RequeueAfter: time.Second}, nil
+				} else {
+					l.Info("Node not ready yet after reboot")
+					return ctrl.Result{RequeueAfter: time.Minute}, nil
+				}
 			}
 		}
 	} else if node.Status.CurrentState == drainv1.NodeCurrentStateQueued {
@@ -255,6 +329,11 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		} else {
 			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 		}
+	}
+
+	err := r.rebootManager.Cleanup(ctx)
+	if err != nil {
+		l.Warn("Failed to cleanup reboot pods", zap.Error(err))
 	}
 
 	return ctrl.Result{}, nil
@@ -311,12 +390,37 @@ func (r *nodeReconciler) setCurrentState(ctx context.Context, l *zap.Logger, nod
 	return nil
 }
 
+func (r *nodeReconciler) setState(ctx context.Context, l *zap.Logger, node *drainv1.Node, s drainv1.NodeState) error {
+	if node.Spec.State == s {
+		return nil
+	}
+
+	l.Info("setting state on node", zap.String("state", s.String()))
+	patch := client.MergeFrom(node.DeepCopy())
+	node.Spec.State = s
+	if err := r.Patch(ctx, node, patch); err != nil {
+		return fmt.Errorf("failed to update state on node: %w", err)
+	}
+	return nil
+}
+
 func (r *nodeReconciler) setUnschedulable(ctx context.Context, kubeNode *corev1.Node, unschedulable bool) error {
 	if kubeNode.Spec.Unschedulable != unschedulable {
 		patch := client.MergeFrom(kubeNode.DeepCopy())
 		kubeNode.Spec.Unschedulable = unschedulable
 		if err := r.Patch(ctx, kubeNode, patch); err != nil {
 			return fmt.Errorf("failed to update unschedulable status on node: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *nodeReconciler) setBootID(ctx context.Context, node *drainv1.Node, kubeNode *corev1.Node) error {
+	if kubeNode.Status.NodeInfo.BootID != node.Status.BootID {
+		patch := client.MergeFrom(node.DeepCopy())
+		node.Status.BootID = kubeNode.Status.NodeInfo.BootID
+		if err := r.Status().Patch(ctx, node, patch); err != nil {
+			return fmt.Errorf("failed to update bootID on node: %w", err)
 		}
 	}
 	return nil
@@ -330,27 +434,35 @@ func (r *nodeReconciler) checkRebootRequired(ctx context.Context, node *drainv1.
 	if node.Status.RebootRequiredLastChecked == nil ||
 		node.Status.RebootRequiredLastChecked.Time.IsZero() ||
 		node.Status.RebootRequiredLastChecked.Time.Before(time.Now().Add(-rebootCheckInterval)) {
-		l.Debug("Checking if reboot is required")
-		required, err := r.rebootManager.IsRebootRequired(ctx, node.Name)
+		_, err := r.isRebootRequired(ctx, node, l)
 		if err != nil {
-			return fmt.Errorf("failed to check if reboot is required: %w", err)
-		}
-		// TODO change to use conditions
-		patch := client.MergeFrom(node.DeepCopy())
-		node.Status.RebootRequired = utils.PtrTo(required)
-		node.Status.RebootRequiredLastChecked = &metav1.Time{Time: time.Now()}
-		if err = r.Status().Patch(ctx, node, patch); err != nil {
-			return fmt.Errorf("failed to update node reboot required last checked: %w", err)
-		}
-		if required {
-			r.recorder.Eventf(node, corev1.EventTypeNormal, "RebootRequired", "Reboot is required")
+			return err
 		}
 	}
 	return nil
 }
 
+func (r *nodeReconciler) isRebootRequired(ctx context.Context, node *drainv1.Node, l *zap.Logger) (bool, error) {
+	l.Debug("Checking if reboot is required")
+	required, err := r.rebootManager.IsRebootRequired(ctx, node.Name)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if reboot is required: %w", err)
+	}
+	// TODO change to use conditions
+	patch := client.MergeFrom(node.DeepCopy())
+	node.Status.RebootRequired = utils.PtrTo(required)
+	node.Status.RebootRequiredLastChecked = &metav1.Time{Time: time.Now()}
+	if err = r.Status().Patch(ctx, node, patch); err != nil {
+		return false, fmt.Errorf("failed to update node reboot required last checked: %w", err)
+	}
+	if required {
+		r.recorder.Eventf(node, corev1.EventTypeNormal, "RebootRequired", "Reboot is required")
+	}
+	return required, nil
+}
+
 func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1.Node, kubeNode *corev1.Node) (*ctrl.Result, error) {
-	if node.Spec.State != drainv1.NodeStateDrained || node.Status.Drained {
+	if !node.Spec.State.Drain() || node.Status.Drained {
 		return nil, nil
 	}
 
@@ -372,11 +484,6 @@ func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1
 		}
 		if !drainOk {
 			return nil, fmt.Errorf("node(%s) is not ok to drain", node.Name)
-		}
-
-		err = r.rebootManager.CleanupNode(ctx, node.Name)
-		if err != nil {
-			return nil, fmt.Errorf("failed to cleanup node(%s) for reboot manager pods: %w", node.Name, err)
 		}
 
 		err = r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateDraining)
@@ -434,6 +541,11 @@ func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1
 
 	l.Info("draining node")
 
+	err = r.rebootManager.CleanupNode(ctx, node.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to cleanup node(%s) for reboot manager pods: %w", node.Name, err)
+	}
+
 	err = drain.RunNodeDrain(drainHelper, node.Name)
 	if err != nil {
 		l.Error("failed to drain node",
@@ -469,7 +581,7 @@ func (r *nodeReconciler) undrain(ctx context.Context, l *zap.Logger, node *drain
 				return false, ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 			}
 
-			if err := r.setUnschedulable(ctx, kubeNode, false); err != nil {
+			if err = r.setUnschedulable(ctx, kubeNode, false); err != nil {
 				return false, ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 			}
 		}
@@ -477,6 +589,13 @@ func (r *nodeReconciler) undrain(ctx context.Context, l *zap.Logger, node *drain
 		if err := r.drainManager.RunPostDrain(ctx, node.Name); err != nil {
 			l.Warn("failed to run PostDrain for node", zap.Error(err))
 			return false, ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+
+		if node.Status.Drained {
+			if err := r.setDrained(ctx, node, false); err != nil {
+				l.Warn("failed to set Drained=false for node", zap.Error(err))
+				return false, ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
 		}
 
 		if err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateOk); err != nil {
@@ -488,12 +607,14 @@ func (r *nodeReconciler) undrain(ctx context.Context, l *zap.Logger, node *drain
 	}
 
 	undrain := false
-	if node.Status.CurrentState == drainv1.NodeCurrentStateDrained || node.Status.CurrentState == drainv1.NodeCurrentStateDraining {
+	if node.Status.CurrentState == drainv1.NodeCurrentStateDrained ||
+		node.Status.CurrentState == drainv1.NodeCurrentStateDraining ||
+		node.Status.CurrentState == drainv1.NodeCurrentStateRebooting {
 		// Check need for undrain
 		switch node.Spec.State {
 		case drainv1.NodeStateActive:
 			undrain = true
-		case drainv1.NodeStateDrained, drainv1.NodeStateCordoned:
+		case drainv1.NodeStateDrained, drainv1.NodeStateRebootIfRequired, drainv1.NodeStateCordoned:
 			break
 		default:
 			return false, ctrl.Result{}, fmt.Errorf("unhandled state for undrain: %s", node.Spec.State)
