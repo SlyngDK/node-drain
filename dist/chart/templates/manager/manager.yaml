@@ -25,6 +25,24 @@ spec:
         {{- end }}
         {{- end }}
     spec:
+      {{- if gt (len .Values.plugins) 0}}
+      initContainers:
+        {{- range .Values.plugins }}
+        - name: {{ required "Name is required" .name }}
+          image: {{ required "Image is required" .image }}
+          imagePullPolicy: {{ .imagePullPolicy | default "IfNotPresent" }}
+          {{- if .command }}
+          command: {{ .command }}
+          {{- end }}
+          {{- if .args }}
+          args: {{ .args }}
+          {{- end }}
+          volumeMounts:
+            - name: plugins
+              readOnly: false
+              mountPath: /plugins
+        {{- end }}
+      {{- end }}
       containers:
         - name: manager
           args:
@@ -57,6 +75,12 @@ spec:
             {{- toYaml .Values.controllerManager.container.securityContext | nindent 12 }}
           {{- if and .Values.certmanager.enable (or .Values.webhook.enable .Values.metrics.enable) }}
           volumeMounts:
+            - name: config
+              readOnly: true
+              mountPath: /config
+            - name: plugins
+              readOnly: false
+              mountPath: /plugins
             {{- if and .Values.webhook.enable .Values.certmanager.enable }}
             - name: webhook-cert
               mountPath: /tmp/k8s-webhook-server/serving-certs
@@ -74,6 +98,13 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.controllerManager.terminationGracePeriodSeconds }}
       {{- if and .Values.certmanager.enable (or .Values.webhook.enable .Values.metrics.enable) }}
       volumes:
+        - name: config
+          secret:
+            secretName: nodedrain-config
+            optional: true
+        - name: plugins
+          emptyDir:
+            sizeLimit: 1G
         {{- if and .Values.webhook.enable .Values.certmanager.enable }}
         - name: webhook-cert
           secret:

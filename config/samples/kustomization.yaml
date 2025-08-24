@@ -1,5 +1,4 @@
 ## Append samples of your project ##
 resources:
 - config.yaml
-- drain_v1_node.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

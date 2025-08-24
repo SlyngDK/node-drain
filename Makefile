@@ -5,6 +5,7 @@ IMG_NAME_EXAM_PLUGIN ?= example-plugin
 IMG_TAG ?= latest
 KUBE_CONTEXT ?= kind-nodedrain-test-e2e
 KUSTOMIZE_CONFIG ?= default
+IMG_REGISTRY_FULL := $(if ${IMG_REGISTRY},$(patsubst %/,%,${IMG_REGISTRY})/)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -126,13 +127,13 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build --target controller -t ${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG} .
-	$(CONTAINER_TOOL) build --target example-plugin -t ${IMG_REGISTRY}${IMG_NAME_EXAM_PLUGIN}:${IMG_TAG} .
+	$(CONTAINER_TOOL) build --target controller -t $(IMG_REGISTRY_FULL)$(IMG_NAME_CONTROLLER):$(IMG_TAG) .
+	$(CONTAINER_TOOL) build --target example-plugin -t $(IMG_REGISTRY_FULL)$(IMG_NAME_EXAM_PLUGIN):$(IMG_TAG) .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push ${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG}
-	$(CONTAINER_TOOL) push ${IMG_REGISTRY}${IMG_NAME_EXAM_PLUGIN}:${IMG_TAG}
+	$(CONTAINER_TOOL) push $(IMG_REGISTRY_FULL)$(IMG_NAME_CONTROLLER):$(IMG_TAG)
+	$(CONTAINER_TOOL) push $(IMG_REGISTRY_FULL)$(IMG_NAME_EXAM_PLUGIN):$(IMG_TAG)
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator IMG_TAG=0.0.1). To use this option you need to:
@@ -147,14 +148,14 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name nodedrain-builder
 	$(CONTAINER_TOOL) buildx use nodedrain-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag $(IMG_REGISTRY_FULL)$(IMG_NAME_CONTROLLER):$(IMG_TAG) -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm nodedrain-builder
 	rm Dockerfile.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG}
+	cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG_REGISTRY_FULL)$(IMG_NAME_CONTROLLER):$(IMG_TAG)
 	$(KUSTOMIZE) build config/$(KUSTOMIZE_CONFIG) > dist/install.yaml
 
 .PHONY: build-helm-chart
@@ -177,7 +178,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/${KUSTOMIZE_CONFIG} && $(KUSTOMIZE) edit set image controller=${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG}
+	cd config/${KUSTOMIZE_CONFIG} && $(KUSTOMIZE) edit set image controller=$(IMG_REGISTRY_FULL)$(IMG_NAME_CONTROLLER):$(IMG_TAG)
 	$(KUSTOMIZE) build config/${KUSTOMIZE_CONFIG} | $(KUBECTL) --context ${KUBE_CONTEXT} apply -f -
 
 .PHONY: undeploy

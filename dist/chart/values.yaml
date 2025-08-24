@@ -40,6 +40,14 @@ controllerManager:
   terminationGracePeriodSeconds: 10
   serviceAccountName: nodedrain-controller-manager
 
+# Plugin container is started as a initContainer and expecting plugins to be copied to `/plugins/*.so`
+#plugins:
+#  - name: example-plugin
+#    image: asdf
+#    command: [ "cp", "/example-plugin.so", "/plugins/" ]
+#    args: []
+plugins: []
+
 # [RBAC]: To enable RBAC (Permissions) configurations
 rbac:
   enable: true

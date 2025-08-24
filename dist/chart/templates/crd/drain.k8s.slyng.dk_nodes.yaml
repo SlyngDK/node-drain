@@ -26,15 +26,15 @@ spec:
     - jsonPath: .spec.state
       name: Requested State
       type: string
+    - jsonPath: .status.currentState
+      name: CurrentState
+      type: string
     - jsonPath: .status.drained
       name: Drained
       type: boolean
     - jsonPath: .status.rebootRequired
       name: Reboot Required
       type: boolean
-    - jsonPath: .status.rebootRequiredLastChecked
-      name: Reboot Required Last Checked
-      type: string
     name: v1
     schema:
       openAPIV3Schema:
@@ -65,8 +65,8 @@ spec:
                 enum:
                 - Active
                 - Cordoned
-                - Rebooted
                 - Drained
+                - RebootIfRequired
                 type: string
             required:
             - state
@@ -74,6 +74,8 @@ spec:
           status:
             description: NodeStatus defines the observed state of Node
             properties:
+              bootID:
+                type: string
               conditions:
                 items:
                   properties:
@@ -134,11 +136,16 @@ spec:
                   type: object
                 type: array
               currentState:
+                default: OK
                 enum:
-                - Active
+                - OK
                 - Cordoned
-                - Rebooted
+                - Queued
+                - Next
+                - Draining
                 - Drained
+                - Undraining
+                - Rebooting
                 type: string
               drained:
                 default: false
@@ -149,6 +156,7 @@ spec:
                 format: date-time
                 type: string
             required:
+            - currentState
             - drained
             type: object
         type: object

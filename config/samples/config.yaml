@@ -14,5 +14,7 @@ stringData:
           level: debug
         node-webhook:
           level: debug
+        drain-plugin-client:
+          level: debug
     reboot:
       checkInterval: 5m
