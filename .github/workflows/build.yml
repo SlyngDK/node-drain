@@ -44,5 +44,8 @@ jobs:
         env:
           IMG_TAG: ${{ steps.build_image.outputs.IMG_TAG }}
         run: |
-          [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 0
+          if [[ "${{ github.ref_type }}" == "branch" && "${{ github.ref_name }}" != "main" ]] || [[ "${{ github.ref_type }}" == "tag" && ! "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Only push main branch and versioned tags"
+            exit 1
+          fi
           make docker-push
