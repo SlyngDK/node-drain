@@ -40,7 +40,10 @@ jobs:
           make docker-build
 
       - name: Push image
+        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
         env:
           IMG_TAG: ${{ steps.build_image.outputs.IMG_TAG }}
         run: |
-          echo $IMG_TAG
+          if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 0
+          
+          echo "Pushing image ${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG}"
