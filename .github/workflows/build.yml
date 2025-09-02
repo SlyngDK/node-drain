@@ -5,11 +5,14 @@ on:
 
 env:
   IMG_REGISTRY: ghcr.io/slyngdk/
-  IMG_NAME_CONTROLLER: nodedrain
+  IMG_NAME_CONTROLLER: nodedrain-controller
+  IMG_NAME_EXAM_PLUGIN: nodedrain-example-plugin
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
