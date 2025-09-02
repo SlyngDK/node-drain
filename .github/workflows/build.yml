@@ -44,5 +44,5 @@ jobs:
         env:
           IMG_TAG: ${{ steps.build_image.outputs.IMG_TAG }}
         run: |
-          if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 0
+          [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 0
           make docker-push
