@@ -48,3 +48,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
     $hasValidating = true }}{{- end }}
 {{- end }}
 {{ $hasValidating }}}}{{- end }}
+
+{{- define "controllerManager.image" -}}
+{{- $tag := default .Chart.AppVersion .Values.controllerManager.container.image.tag -}}
+{{- if not (typeIs "string" $tag) -}}
+  {{ fail "Image tags must be strings." }}
+{{- end -}}
+{{- print (required "An image repository is required" .Values.controllerManager.container.image.repository) ":" $tag -}}
+{{- end -}}
