@@ -9,7 +9,7 @@ env:
   IMG_NAME_EXAM_PLUGIN: nodedrain-example-plugin
 
 jobs:
-  build:
+  container-build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -24,7 +24,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Login to GitHub Container Registry
-        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
+        if: github.ref == 'refs/heads/main' || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -44,7 +44,7 @@ jobs:
           make docker-build
 
       - name: Push image
-        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
+        if: github.ref == 'refs/heads/main' || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))
         env:
           IMG_TAG: ${{ steps.build_image.outputs.IMG_TAG }}
         run: |
@@ -53,3 +53,38 @@ jobs:
             exit 1
           fi
           make docker-push
+
+  helm-package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Verify Helm installation
+        run: helm version
+
+      - name: Login to GitHub Container Registry
+        if: github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Helm package
+        run: |
+          export VERSION=999
+          if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            export VERSION=$(echo -n "${{ github.ref_name }}" | sed 's/^v//g')
+          fi
+          helm package dist/chart -u --version ${VERSION} --app-version ${VERSION}
+          if [[ "${VERSION}" != "999" ]]; then
+            helm push "nodedrain-${VERSION}.tgz" "oci://ghcr.io/slyngdk/charts"
+          fi
