@@ -202,7 +202,7 @@ func (r *RebootManager) IsNodeRebooted(ctx context.Context, kubeNode *corev1.Nod
 	if config.GetConfig().ContainerNode {
 		r.l.Info("Node was not rebooted, because running on containers", zap.String("node.name", kubeNode.Name))
 		pod := r.rebootRequiredPod(kubeNode.Name)
-		pod.ObjectMeta.GenerateName = "reboot-required-remove-"
+		pod.GenerateName = "reboot-required-remove-"
 		pod.Spec.Containers[0].Command = []string{"rm", "-f", "/host/var/run/reboot-required"}
 		pod.Spec.Containers[0].VolumeMounts[0].ReadOnly = false
 		pod.Spec.SecurityContext.RunAsUser = PtrTo(int64(0))
