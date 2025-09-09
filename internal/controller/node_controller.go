@@ -147,6 +147,7 @@ func (r *nodeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.0/pkg/reconcile
+// nolint:gocyclo
 func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	l := r.l.With(zap.String("node.name", req.Name))
 	l.Debug("node reconcile")

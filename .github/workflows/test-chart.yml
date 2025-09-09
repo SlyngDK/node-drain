@@ -2,7 +2,28 @@ name: Test Chart
 
 on:
   push:
+    paths-ignore:
+      - '.gitignore'
+      - 'CODEOWNERS'
+      - 'LICENSE'
+      - '*.md'
+      - '*.adoc'
+      - '*.txt'
   pull_request:
+    paths-ignore:
+      - '.gitignore'
+      - 'CODEOWNERS'
+      - 'LICENSE'
+      - '*.md'
+      - '*.adoc'
+      - '*.txt'
+
+env:
+  IMG_REGISTRY: ghcr.io/slyngdk/
+  IMG_NAME_CONTROLLER: nodedrain-controller
+  IMG_NAME_EXAM_PLUGIN: nodedrain-example-plugin
+  IMG_TAG: test-chart
+  KIND_CLUSTER_NAME: nodedrain-test-chart
 
 jobs:
   test-chart:
@@ -26,13 +47,15 @@ jobs:
         run: kind version
 
       - name: Create kind cluster
-        run: kind create cluster
+        run: |
+          kind delete cluster
+          kind create cluster
 
       - name: Prepare nodedrain
         run: |
           go mod tidy
-          make docker-build IMG_NAME_CONTROLLER=nodedrain IMG_TAG=v0.1.0
-          kind load docker-image IMG_NAME_CONTROLLER=nodedrain IMG_TAG=v0.1.0
+          make docker-build
+          kind load docker-image ${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG}
 
       - name: Install Helm
         run: |
