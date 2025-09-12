@@ -309,6 +309,20 @@ var _ = Describe("Manager", Ordered, func() {
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
 
+		It("should have a nodes.drain.k8s.slyng.dk generated", func() {
+			By("checking for nodes.drain.k8s.slyng.dk")
+			controlPlaneNodedrainStatus := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get",
+					"nodes.drain.k8s.slyng.dk",
+					"nodedrain-test-e2e-control-plane",
+					"-o", "jsonpath={.status.currentState}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("OK"))
+			}
+			Eventually(controlPlaneNodedrainStatus).Should(Succeed())
+		})
+
 		// TODO: Customize the e2e test suite with scenarios specific to your project.
 		// Consider applying sample/CR(s) and check their status and/or verifying
 		// the reconciliation by using the metrics, i.e.:
