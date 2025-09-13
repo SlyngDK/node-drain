@@ -183,6 +183,7 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
+	$(KUBECTL) --context ${KUBE_CONTEXT} patch nodes.drain.k8s.slyng.dk --type=json -p='[{"op": "replace", "path": "/metadata/finalizers", "value": []}]' $$($(KUBECTL) --context ${KUBE_CONTEXT} get nodes.drain.k8s.slyng.dk --template='{{ range .items }}{{.metadata.name}} {{end}}')
 	$(KUSTOMIZE) build config/${KUSTOMIZE_CONFIG} | $(KUBECTL) --context ${KUBE_CONTEXT} delete --ignore-not-found=$(ignore-not-found) -f -
 
 ##@ Dependencies

@@ -81,8 +81,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 		By("undeploying the controller-manager")
 		cmd = exec.Command("make", "undeploy")
-		output, err := utils.Run(cmd)
-		fmt.Println(err, output)
+		_, _ = utils.Run(cmd)
 
 		By("uninstalling CRDs")
 		cmd = exec.Command("make", "uninstall")
@@ -90,10 +89,6 @@ var _ = Describe("Manager", Ordered, func() {
 
 		By("removing manager namespace")
 		cmd = exec.Command("kubectl", "delete", "ns", namespace)
-		_, _ = utils.Run(cmd)
-
-		By("removing cluster role binding for metrics test")
-		cmd = exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName)
 		_, _ = utils.Run(cmd)
 	})
 
@@ -227,6 +222,7 @@ var _ = Describe("Manager", Ordered, func() {
 							"command": ["/bin/sh", "-c"],
 							"args": ["curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics"],
 							"securityContext": {
+								"readOnlyRootFilesystem": true,
 								"allowPrivilegeEscalation": false,
 								"capabilities": {
 									"drop": ["ALL"]
@@ -238,7 +234,7 @@ var _ = Describe("Manager", Ordered, func() {
 								}
 							}
 						}],
-						"serviceAccount": "%s"
+						"serviceAccountName": "%s"
 					}
 				}`, token, metricsServiceName, namespace, serviceAccountName))
 			_, err = utils.Run(cmd)
