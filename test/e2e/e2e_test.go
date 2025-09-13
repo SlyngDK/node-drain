@@ -79,14 +79,6 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
 		_, _ = utils.Run(cmd)
 
-		By("delete nodes.drain.k8s.slyng.dk")
-		cmd = exec.Command("kubectl", "delete", "--all", "nodes.drain.k8s.slyng.dk")
-		_, _ = utils.Run(cmd)
-
-		By("wait for delete nodes.drain.k8s.slyng.dk")
-		cmd = exec.Command("kubectl", "wait", "--for=delete", "--all", "nodes.drain.k8s.slyng.dk")
-		_, _ = utils.Run(cmd)
-
 		By("undeploying the controller-manager")
 		cmd = exec.Command("make", "undeploy")
 		_, _ = utils.Run(cmd)
@@ -97,10 +89,6 @@ var _ = Describe("Manager", Ordered, func() {
 
 		By("removing manager namespace")
 		cmd = exec.Command("kubectl", "delete", "ns", namespace)
-		_, _ = utils.Run(cmd)
-
-		By("removing cluster role binding for metrics test")
-		cmd = exec.Command("kubectl", "delete", "clusterrolebinding", metricsRoleBindingName)
 		_, _ = utils.Run(cmd)
 	})
 
@@ -234,6 +222,7 @@ var _ = Describe("Manager", Ordered, func() {
 							"command": ["/bin/sh", "-c"],
 							"args": ["curl -v -k -H 'Authorization: Bearer %s' https://%s.%s.svc.cluster.local:8443/metrics"],
 							"securityContext": {
+								"readOnlyRootFilesystem": true,
 								"allowPrivilegeEscalation": false,
 								"capabilities": {
 									"drop": ["ALL"]
@@ -245,7 +234,7 @@ var _ = Describe("Manager", Ordered, func() {
 								}
 							}
 						}],
-						"serviceAccount": "%s"
+						"serviceAccountName": "%s"
 					}
 				}`, token, metricsServiceName, namespace, serviceAccountName))
 			_, err = utils.Run(cmd)
@@ -308,6 +297,20 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
+
+		It("should have a nodes.drain.k8s.slyng.dk generated", func() {
+			By("checking for nodes.drain.k8s.slyng.dk")
+			controlPlaneNodedrainStatus := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get",
+					"nodes.drain.k8s.slyng.dk",
+					"nodedrain-test-e2e-control-plane",
+					"-o", "jsonpath={.status.currentState}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("OK"))
+			}
+			Eventually(controlPlaneNodedrainStatus).Should(Succeed())
+		})
 
 		// TODO: Customize the e2e test suite with scenarios specific to your project.
 		// Consider applying sample/CR(s) and check their status and/or verifying
