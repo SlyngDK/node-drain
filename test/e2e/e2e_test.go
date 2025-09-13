@@ -81,7 +81,8 @@ var _ = Describe("Manager", Ordered, func() {
 
 		By("undeploying the controller-manager")
 		cmd = exec.Command("make", "undeploy")
-		_, _ = utils.Run(cmd)
+		output, err := utils.Run(cmd)
+		fmt.Println(err, output)
 
 		By("uninstalling CRDs")
 		cmd = exec.Command("make", "uninstall")
