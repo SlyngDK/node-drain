@@ -79,17 +79,10 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
 		_, _ = utils.Run(cmd)
 
-		By("delete nodes.drain.k8s.slyng.dk")
-		cmd = exec.Command("kubectl", "delete", "--all", "nodes.drain.k8s.slyng.dk")
-		_, _ = utils.Run(cmd)
-
-		By("wait for delete nodes.drain.k8s.slyng.dk")
-		cmd = exec.Command("kubectl", "wait", "--for=delete", "--all", "nodes.drain.k8s.slyng.dk")
-		_, _ = utils.Run(cmd)
-
 		By("undeploying the controller-manager")
 		cmd = exec.Command("make", "undeploy")
-		_, _ = utils.Run(cmd)
+		output, err := utils.Run(cmd)
+		fmt.Println(err, output)
 
 		By("uninstalling CRDs")
 		cmd = exec.Command("make", "uninstall")
@@ -308,6 +301,20 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks
+
+		It("should have a nodes.drain.k8s.slyng.dk generated", func() {
+			By("checking for nodes.drain.k8s.slyng.dk")
+			controlPlaneNodedrainStatus := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get",
+					"nodes.drain.k8s.slyng.dk",
+					"nodedrain-test-e2e-control-plane",
+					"-o", "jsonpath={.status.currentState}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal("OK"))
+			}
+			Eventually(controlPlaneNodedrainStatus).Should(Succeed())
+		})
 
 		// TODO: Customize the e2e test suite with scenarios specific to your project.
 		// Consider applying sample/CR(s) and check their status and/or verifying
