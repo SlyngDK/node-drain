@@ -79,14 +79,6 @@ var _ = Describe("Manager", Ordered, func() {
 		cmd := exec.Command("kubectl", "delete", "pod", "curl-metrics", "-n", namespace)
 		_, _ = utils.Run(cmd)
 
-		By("delete nodes.drain.k8s.slyng.dk")
-		cmd = exec.Command("kubectl", "delete", "--all", "nodes.drain.k8s.slyng.dk")
-		_, _ = utils.Run(cmd)
-
-		By("wait for delete nodes.drain.k8s.slyng.dk")
-		cmd = exec.Command("kubectl", "wait", "--for=delete", "--all", "nodes.drain.k8s.slyng.dk")
-		_, _ = utils.Run(cmd)
-
 		By("undeploying the controller-manager")
 		cmd = exec.Command("make", "undeploy")
 		_, _ = utils.Run(cmd)
