@@ -33,7 +33,7 @@ jobs:
       - name: Run linter
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.3.0
+          version: v2.4.0
 
   buf-lint:
     runs-on: ubuntu-latest
