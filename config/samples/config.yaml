@@ -3,6 +3,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: nodedrain-config
+  namespace: nodedrain-system
   labels:
     app.kubernetes.io/name: nodedrain
     app.kubernetes.io/managed-by: kustomize
@@ -18,3 +19,7 @@ stringData:
           level: debug
     reboot:
       checkInterval: 5m
+
+    plugins:
+      example-plugin:
+        key: value

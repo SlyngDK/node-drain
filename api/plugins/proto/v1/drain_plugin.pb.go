@@ -9,8 +9,8 @@ package v1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	_ "google.golang.org/protobuf/types/gofeaturespb"
 	reflect "reflect"
-	sync "sync"
 	unsafe "unsafe"
 )
 
@@ -21,15 +21,215 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type InitRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+type ConfigFormat int32
+
+const (
+	ConfigFormat_CONFIG_FORMAT_UNSPECIFIED ConfigFormat = 0
+	ConfigFormat_CONFIG_FORMAT_YAML        ConfigFormat = 1
+	ConfigFormat_CONFIG_FORMAT_JSON        ConfigFormat = 2
+)
+
+// Enum value maps for ConfigFormat.
+var (
+	ConfigFormat_name = map[int32]string{
+		0: "CONFIG_FORMAT_UNSPECIFIED",
+		1: "CONFIG_FORMAT_YAML",
+		2: "CONFIG_FORMAT_JSON",
+	}
+	ConfigFormat_value = map[string]int32{
+		"CONFIG_FORMAT_UNSPECIFIED": 0,
+		"CONFIG_FORMAT_YAML":        1,
+		"CONFIG_FORMAT_JSON":        2,
+	}
+)
+
+func (x ConfigFormat) Enum() *ConfigFormat {
+	p := new(ConfigFormat)
+	*p = x
+	return p
+}
+
+func (x ConfigFormat) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConfigFormat) Descriptor() protoreflect.EnumDescriptor {
+	return file_api_plugins_proto_v1_drain_plugin_proto_enumTypes[0].Descriptor()
+}
+
+func (ConfigFormat) Type() protoreflect.EnumType {
+	return &file_api_plugins_proto_v1_drain_plugin_proto_enumTypes[0]
+}
+
+func (x ConfigFormat) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+type PluginInfoRequest struct {
+	state         protoimpl.MessageState `protogen:"opaque.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
+func (x *PluginInfoRequest) Reset() {
+	*x = PluginInfoRequest{}
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PluginInfoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PluginInfoRequest) ProtoMessage() {}
+
+func (x *PluginInfoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+type PluginInfoRequest_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+}
+
+func (b0 PluginInfoRequest_builder) Build() *PluginInfoRequest {
+	m0 := &PluginInfoRequest{}
+	b, x := &b0, m0
+	_, _ = b, x
+	return m0
+}
+
+type PluginInfoResponse struct {
+	state                   protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Id           *string                `protobuf:"bytes,1,opt,name=id"`
+	xxx_hidden_ConfigFormat ConfigFormat           `protobuf:"varint,2,opt,name=config_format,json=configFormat,enum=api.plugins.proto.v1.ConfigFormat"`
+	XXX_raceDetectHookData  protoimpl.RaceDetectHookData
+	XXX_presence            [1]uint32
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *PluginInfoResponse) Reset() {
+	*x = PluginInfoResponse{}
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PluginInfoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PluginInfoResponse) ProtoMessage() {}
+
+func (x *PluginInfoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+func (x *PluginInfoResponse) GetId() string {
+	if x != nil {
+		if x.xxx_hidden_Id != nil {
+			return *x.xxx_hidden_Id
+		}
+		return ""
+	}
+	return ""
+}
+
+func (x *PluginInfoResponse) GetConfigFormat() ConfigFormat {
+	if x != nil {
+		if protoimpl.X.Present(&(x.XXX_presence[0]), 1) {
+			return x.xxx_hidden_ConfigFormat
+		}
+	}
+	return ConfigFormat_CONFIG_FORMAT_UNSPECIFIED
+}
+
+func (x *PluginInfoResponse) SetId(v string) {
+	x.xxx_hidden_Id = &v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 2)
+}
+
+func (x *PluginInfoResponse) SetConfigFormat(v ConfigFormat) {
+	x.xxx_hidden_ConfigFormat = v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 1, 2)
+}
+
+func (x *PluginInfoResponse) HasId() bool {
+	if x == nil {
+		return false
+	}
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 0)
+}
+
+func (x *PluginInfoResponse) HasConfigFormat() bool {
+	if x == nil {
+		return false
+	}
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 1)
+}
+
+func (x *PluginInfoResponse) ClearId() {
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 0)
+	x.xxx_hidden_Id = nil
+}
+
+func (x *PluginInfoResponse) ClearConfigFormat() {
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 1)
+	x.xxx_hidden_ConfigFormat = ConfigFormat_CONFIG_FORMAT_UNSPECIFIED
+}
+
+type PluginInfoResponse_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Id           *string
+	ConfigFormat *ConfigFormat
+}
+
+func (b0 PluginInfoResponse_builder) Build() *PluginInfoResponse {
+	m0 := &PluginInfoResponse{}
+	b, x := &b0, m0
+	_, _ = b, x
+	if b.Id != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 2)
+		x.xxx_hidden_Id = b.Id
+	}
+	if b.ConfigFormat != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 1, 2)
+		x.xxx_hidden_ConfigFormat = *b.ConfigFormat
+	}
+	return m0
+}
+
+type InitRequest struct {
+	state                  protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Config      []byte                 `protobuf:"bytes,1,opt,name=config"`
+	XXX_raceDetectHookData protoimpl.RaceDetectHookData
+	XXX_presence           [1]uint32
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
 func (x *InitRequest) Reset() {
 	*x = InitRequest{}
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[0]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -41,7 +241,7 @@ func (x *InitRequest) String() string {
 func (*InitRequest) ProtoMessage() {}
 
 func (x *InitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[0]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -52,21 +252,59 @@ func (x *InitRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use InitRequest.ProtoReflect.Descriptor instead.
-func (*InitRequest) Descriptor() ([]byte, []int) {
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP(), []int{0}
+func (x *InitRequest) GetConfig() []byte {
+	if x != nil {
+		return x.xxx_hidden_Config
+	}
+	return nil
+}
+
+func (x *InitRequest) SetConfig(v []byte) {
+	if v == nil {
+		v = []byte{}
+	}
+	x.xxx_hidden_Config = v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 1)
+}
+
+func (x *InitRequest) HasConfig() bool {
+	if x == nil {
+		return false
+	}
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 0)
+}
+
+func (x *InitRequest) ClearConfig() {
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 0)
+	x.xxx_hidden_Config = nil
+}
+
+type InitRequest_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Config []byte
+}
+
+func (b0 InitRequest_builder) Build() *InitRequest {
+	m0 := &InitRequest{}
+	b, x := &b0, m0
+	_, _ = b, x
+	if b.Config != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 1)
+		x.xxx_hidden_Config = b.Config
+	}
+	return m0
 }
 
 type InitResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	state         protoimpl.MessageState `protogen:"opaque.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *InitResponse) Reset() {
 	*x = InitResponse{}
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[1]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -78,7 +316,7 @@ func (x *InitResponse) String() string {
 func (*InitResponse) ProtoMessage() {}
 
 func (x *InitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[1]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -89,28 +327,30 @@ func (x *InitResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use InitResponse.ProtoReflect.Descriptor instead.
-func (*InitResponse) Descriptor() ([]byte, []int) {
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP(), []int{1}
+type InitResponse_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
 }
 
-func (x *InitResponse) GetId() string {
-	if x != nil {
-		return x.Id
-	}
-	return ""
+func (b0 InitResponse_builder) Build() *InitResponse {
+	m0 := &InitResponse{}
+	b, x := &b0, m0
+	_, _ = b, x
+	return m0
 }
 
 type IsSupportedResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Supported     bool                   `protobuf:"varint,1,opt,name=supported,proto3" json:"supported,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Supported   bool                   `protobuf:"varint,1,opt,name=supported"`
+	XXX_raceDetectHookData protoimpl.RaceDetectHookData
+	XXX_presence           [1]uint32
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *IsSupportedResponse) Reset() {
 	*x = IsSupportedResponse{}
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[2]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -122,7 +362,7 @@ func (x *IsSupportedResponse) String() string {
 func (*IsSupportedResponse) ProtoMessage() {}
 
 func (x *IsSupportedResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[2]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -133,27 +373,56 @@ func (x *IsSupportedResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use IsSupportedResponse.ProtoReflect.Descriptor instead.
-func (*IsSupportedResponse) Descriptor() ([]byte, []int) {
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP(), []int{2}
-}
-
 func (x *IsSupportedResponse) GetSupported() bool {
 	if x != nil {
-		return x.Supported
+		return x.xxx_hidden_Supported
 	}
 	return false
 }
 
+func (x *IsSupportedResponse) SetSupported(v bool) {
+	x.xxx_hidden_Supported = v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 1)
+}
+
+func (x *IsSupportedResponse) HasSupported() bool {
+	if x == nil {
+		return false
+	}
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 0)
+}
+
+func (x *IsSupportedResponse) ClearSupported() {
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 0)
+	x.xxx_hidden_Supported = false
+}
+
+type IsSupportedResponse_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Supported *bool
+}
+
+func (b0 IsSupportedResponse_builder) Build() *IsSupportedResponse {
+	m0 := &IsSupportedResponse{}
+	b, x := &b0, m0
+	_, _ = b, x
+	if b.Supported != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 1)
+		x.xxx_hidden_Supported = *b.Supported
+	}
+	return m0
+}
+
 type IsHealthyRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state         protoimpl.MessageState `protogen:"opaque.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *IsHealthyRequest) Reset() {
 	*x = IsHealthyRequest{}
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[3]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -165,7 +434,7 @@ func (x *IsHealthyRequest) String() string {
 func (*IsHealthyRequest) ProtoMessage() {}
 
 func (x *IsHealthyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[3]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -176,21 +445,30 @@ func (x *IsHealthyRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use IsHealthyRequest.ProtoReflect.Descriptor instead.
-func (*IsHealthyRequest) Descriptor() ([]byte, []int) {
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP(), []int{3}
+type IsHealthyRequest_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+}
+
+func (b0 IsHealthyRequest_builder) Build() *IsHealthyRequest {
+	m0 := &IsHealthyRequest{}
+	b, x := &b0, m0
+	_, _ = b, x
+	return m0
 }
 
 type IsHealthyResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Healthy       bool                   `protobuf:"varint,1,opt,name=healthy,proto3" json:"healthy,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Healthy     bool                   `protobuf:"varint,1,opt,name=healthy"`
+	XXX_raceDetectHookData protoimpl.RaceDetectHookData
+	XXX_presence           [1]uint32
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *IsHealthyResponse) Reset() {
 	*x = IsHealthyResponse{}
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[4]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -202,7 +480,7 @@ func (x *IsHealthyResponse) String() string {
 func (*IsHealthyResponse) ProtoMessage() {}
 
 func (x *IsHealthyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[4]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -213,27 +491,56 @@ func (x *IsHealthyResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use IsHealthyResponse.ProtoReflect.Descriptor instead.
-func (*IsHealthyResponse) Descriptor() ([]byte, []int) {
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP(), []int{4}
-}
-
 func (x *IsHealthyResponse) GetHealthy() bool {
 	if x != nil {
-		return x.Healthy
+		return x.xxx_hidden_Healthy
 	}
 	return false
 }
 
+func (x *IsHealthyResponse) SetHealthy(v bool) {
+	x.xxx_hidden_Healthy = v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 1)
+}
+
+func (x *IsHealthyResponse) HasHealthy() bool {
+	if x == nil {
+		return false
+	}
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 0)
+}
+
+func (x *IsHealthyResponse) ClearHealthy() {
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 0)
+	x.xxx_hidden_Healthy = false
+}
+
+type IsHealthyResponse_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Healthy *bool
+}
+
+func (b0 IsHealthyResponse_builder) Build() *IsHealthyResponse {
+	m0 := &IsHealthyResponse{}
+	b, x := &b0, m0
+	_, _ = b, x
+	if b.Healthy != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 1)
+		x.xxx_hidden_Healthy = *b.Healthy
+	}
+	return m0
+}
+
 type IsSupportedRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state         protoimpl.MessageState `protogen:"opaque.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *IsSupportedRequest) Reset() {
 	*x = IsSupportedRequest{}
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[5]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -245,7 +552,7 @@ func (x *IsSupportedRequest) String() string {
 func (*IsSupportedRequest) ProtoMessage() {}
 
 func (x *IsSupportedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[5]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -256,21 +563,30 @@ func (x *IsSupportedRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use IsSupportedRequest.ProtoReflect.Descriptor instead.
-func (*IsSupportedRequest) Descriptor() ([]byte, []int) {
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP(), []int{5}
+type IsSupportedRequest_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+}
+
+func (b0 IsSupportedRequest_builder) Build() *IsSupportedRequest {
+	m0 := &IsSupportedRequest{}
+	b, x := &b0, m0
+	_, _ = b, x
+	return m0
 }
 
 type IsDrainOkResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Ok          bool                   `protobuf:"varint,1,opt,name=ok"`
+	XXX_raceDetectHookData protoimpl.RaceDetectHookData
+	XXX_presence           [1]uint32
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *IsDrainOkResponse) Reset() {
 	*x = IsDrainOkResponse{}
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[6]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -282,7 +598,7 @@ func (x *IsDrainOkResponse) String() string {
 func (*IsDrainOkResponse) ProtoMessage() {}
 
 func (x *IsDrainOkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[6]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -293,28 +609,59 @@ func (x *IsDrainOkResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use IsDrainOkResponse.ProtoReflect.Descriptor instead.
-func (*IsDrainOkResponse) Descriptor() ([]byte, []int) {
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP(), []int{6}
-}
-
 func (x *IsDrainOkResponse) GetOk() bool {
 	if x != nil {
-		return x.Ok
+		return x.xxx_hidden_Ok
 	}
 	return false
 }
 
+func (x *IsDrainOkResponse) SetOk(v bool) {
+	x.xxx_hidden_Ok = v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 1)
+}
+
+func (x *IsDrainOkResponse) HasOk() bool {
+	if x == nil {
+		return false
+	}
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 0)
+}
+
+func (x *IsDrainOkResponse) ClearOk() {
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 0)
+	x.xxx_hidden_Ok = false
+}
+
+type IsDrainOkResponse_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	Ok *bool
+}
+
+func (b0 IsDrainOkResponse_builder) Build() *IsDrainOkResponse {
+	m0 := &IsDrainOkResponse{}
+	b, x := &b0, m0
+	_, _ = b, x
+	if b.Ok != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 1)
+		x.xxx_hidden_Ok = *b.Ok
+	}
+	return m0
+}
+
 type IsDrainOkRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeName      string                 `protobuf:"bytes,1,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_NodeName    *string                `protobuf:"bytes,1,opt,name=node_name,json=nodeName"`
+	XXX_raceDetectHookData protoimpl.RaceDetectHookData
+	XXX_presence           [1]uint32
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *IsDrainOkRequest) Reset() {
 	*x = IsDrainOkRequest{}
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[7]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -326,7 +673,7 @@ func (x *IsDrainOkRequest) String() string {
 func (*IsDrainOkRequest) ProtoMessage() {}
 
 func (x *IsDrainOkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[7]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -337,28 +684,62 @@ func (x *IsDrainOkRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use IsDrainOkRequest.ProtoReflect.Descriptor instead.
-func (*IsDrainOkRequest) Descriptor() ([]byte, []int) {
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP(), []int{7}
-}
-
 func (x *IsDrainOkRequest) GetNodeName() string {
 	if x != nil {
-		return x.NodeName
+		if x.xxx_hidden_NodeName != nil {
+			return *x.xxx_hidden_NodeName
+		}
+		return ""
 	}
 	return ""
 }
 
+func (x *IsDrainOkRequest) SetNodeName(v string) {
+	x.xxx_hidden_NodeName = &v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 1)
+}
+
+func (x *IsDrainOkRequest) HasNodeName() bool {
+	if x == nil {
+		return false
+	}
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 0)
+}
+
+func (x *IsDrainOkRequest) ClearNodeName() {
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 0)
+	x.xxx_hidden_NodeName = nil
+}
+
+type IsDrainOkRequest_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	NodeName *string
+}
+
+func (b0 IsDrainOkRequest_builder) Build() *IsDrainOkRequest {
+	m0 := &IsDrainOkRequest{}
+	b, x := &b0, m0
+	_, _ = b, x
+	if b.NodeName != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 1)
+		x.xxx_hidden_NodeName = b.NodeName
+	}
+	return m0
+}
+
 type PreDrainRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeName      string                 `protobuf:"bytes,1,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_NodeName    *string                `protobuf:"bytes,1,opt,name=node_name,json=nodeName"`
+	XXX_raceDetectHookData protoimpl.RaceDetectHookData
+	XXX_presence           [1]uint32
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *PreDrainRequest) Reset() {
 	*x = PreDrainRequest{}
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[8]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -370,7 +751,7 @@ func (x *PreDrainRequest) String() string {
 func (*PreDrainRequest) ProtoMessage() {}
 
 func (x *PreDrainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[8]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -381,27 +762,59 @@ func (x *PreDrainRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use PreDrainRequest.ProtoReflect.Descriptor instead.
-func (*PreDrainRequest) Descriptor() ([]byte, []int) {
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP(), []int{8}
-}
-
 func (x *PreDrainRequest) GetNodeName() string {
 	if x != nil {
-		return x.NodeName
+		if x.xxx_hidden_NodeName != nil {
+			return *x.xxx_hidden_NodeName
+		}
+		return ""
 	}
 	return ""
 }
 
+func (x *PreDrainRequest) SetNodeName(v string) {
+	x.xxx_hidden_NodeName = &v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 1)
+}
+
+func (x *PreDrainRequest) HasNodeName() bool {
+	if x == nil {
+		return false
+	}
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 0)
+}
+
+func (x *PreDrainRequest) ClearNodeName() {
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 0)
+	x.xxx_hidden_NodeName = nil
+}
+
+type PreDrainRequest_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	NodeName *string
+}
+
+func (b0 PreDrainRequest_builder) Build() *PreDrainRequest {
+	m0 := &PreDrainRequest{}
+	b, x := &b0, m0
+	_, _ = b, x
+	if b.NodeName != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 1)
+		x.xxx_hidden_NodeName = b.NodeName
+	}
+	return m0
+}
+
 type PreDrainResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state         protoimpl.MessageState `protogen:"opaque.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PreDrainResponse) Reset() {
 	*x = PreDrainResponse{}
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[9]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -413,7 +826,7 @@ func (x *PreDrainResponse) String() string {
 func (*PreDrainResponse) ProtoMessage() {}
 
 func (x *PreDrainResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[9]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -424,21 +837,30 @@ func (x *PreDrainResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use PreDrainResponse.ProtoReflect.Descriptor instead.
-func (*PreDrainResponse) Descriptor() ([]byte, []int) {
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP(), []int{9}
+type PreDrainResponse_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+}
+
+func (b0 PreDrainResponse_builder) Build() *PreDrainResponse {
+	m0 := &PreDrainResponse{}
+	b, x := &b0, m0
+	_, _ = b, x
+	return m0
 }
 
 type PostDrainRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeName      string                 `protobuf:"bytes,1,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_NodeName    *string                `protobuf:"bytes,1,opt,name=node_name,json=nodeName"`
+	XXX_raceDetectHookData protoimpl.RaceDetectHookData
+	XXX_presence           [1]uint32
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *PostDrainRequest) Reset() {
 	*x = PostDrainRequest{}
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[10]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -450,7 +872,7 @@ func (x *PostDrainRequest) String() string {
 func (*PostDrainRequest) ProtoMessage() {}
 
 func (x *PostDrainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[10]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -461,27 +883,59 @@ func (x *PostDrainRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use PostDrainRequest.ProtoReflect.Descriptor instead.
-func (*PostDrainRequest) Descriptor() ([]byte, []int) {
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP(), []int{10}
-}
-
 func (x *PostDrainRequest) GetNodeName() string {
 	if x != nil {
-		return x.NodeName
+		if x.xxx_hidden_NodeName != nil {
+			return *x.xxx_hidden_NodeName
+		}
+		return ""
 	}
 	return ""
 }
 
+func (x *PostDrainRequest) SetNodeName(v string) {
+	x.xxx_hidden_NodeName = &v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 0, 1)
+}
+
+func (x *PostDrainRequest) HasNodeName() bool {
+	if x == nil {
+		return false
+	}
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 0)
+}
+
+func (x *PostDrainRequest) ClearNodeName() {
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 0)
+	x.xxx_hidden_NodeName = nil
+}
+
+type PostDrainRequest_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+	NodeName *string
+}
+
+func (b0 PostDrainRequest_builder) Build() *PostDrainRequest {
+	m0 := &PostDrainRequest{}
+	b, x := &b0, m0
+	_, _ = b, x
+	if b.NodeName != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 0, 1)
+		x.xxx_hidden_NodeName = b.NodeName
+	}
+	return m0
+}
+
 type PostDrainResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state         protoimpl.MessageState `protogen:"opaque.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PostDrainResponse) Reset() {
 	*x = PostDrainResponse{}
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[11]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -493,7 +947,7 @@ func (x *PostDrainResponse) String() string {
 func (*PostDrainResponse) ProtoMessage() {}
 
 func (x *PostDrainResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[11]
+	mi := &file_api_plugins_proto_v1_drain_plugin_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -504,19 +958,30 @@ func (x *PostDrainResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use PostDrainResponse.ProtoReflect.Descriptor instead.
-func (*PostDrainResponse) Descriptor() ([]byte, []int) {
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP(), []int{11}
+type PostDrainResponse_builder struct {
+	_ [0]func() // Prevents comparability and use of unkeyed literals for the builder.
+
+}
+
+func (b0 PostDrainResponse_builder) Build() *PostDrainResponse {
+	m0 := &PostDrainResponse{}
+	b, x := &b0, m0
+	_, _ = b, x
+	return m0
 }
 
 var File_api_plugins_proto_v1_drain_plugin_proto protoreflect.FileDescriptor
 
 const file_api_plugins_proto_v1_drain_plugin_proto_rawDesc = "" +
 	"\n" +
-	"'api/plugins/proto/v1/drain_plugin.proto\x12\x14api.plugins.proto.v1\"\r\n" +
-	"\vInitRequest\"\x1e\n" +
-	"\fInitResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"3\n" +
+	"'api/plugins/proto/v1/drain_plugin.proto\x12\x14api.plugins.proto.v1\x1a!google/protobuf/go_features.proto\"\x13\n" +
+	"\x11PluginInfoRequest\"m\n" +
+	"\x12PluginInfoResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12G\n" +
+	"\rconfig_format\x18\x02 \x01(\x0e2\".api.plugins.proto.v1.ConfigFormatR\fconfigFormat\"%\n" +
+	"\vInitRequest\x12\x16\n" +
+	"\x06config\x18\x01 \x01(\fR\x06config\"\x0e\n" +
+	"\fInitResponse\"3\n" +
 	"\x13IsSupportedResponse\x12\x1c\n" +
 	"\tsupported\x18\x01 \x01(\bR\tsupported\"\x12\n" +
 	"\x10IsHealthyRequest\"-\n" +
@@ -532,61 +997,62 @@ const file_api_plugins_proto_v1_drain_plugin_proto_rawDesc = "" +
 	"\x10PreDrainResponse\"/\n" +
 	"\x10PostDrainRequest\x12\x1b\n" +
 	"\tnode_name\x18\x01 \x01(\tR\bnodeName\"\x13\n" +
-	"\x11PostDrainResponse2\xb6\x04\n" +
-	"\fDrainService\x12M\n" +
+	"\x11PostDrainResponse*]\n" +
+	"\fConfigFormat\x12\x1d\n" +
+	"\x19CONFIG_FORMAT_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12CONFIG_FORMAT_YAML\x10\x01\x12\x16\n" +
+	"\x12CONFIG_FORMAT_JSON\x10\x022\x97\x05\n" +
+	"\fDrainService\x12_\n" +
+	"\n" +
+	"PluginInfo\x12'.api.plugins.proto.v1.PluginInfoRequest\x1a(.api.plugins.proto.v1.PluginInfoResponse\x12M\n" +
 	"\x04Init\x12!.api.plugins.proto.v1.InitRequest\x1a\".api.plugins.proto.v1.InitResponse\x12b\n" +
 	"\vIsSupported\x12(.api.plugins.proto.v1.IsSupportedRequest\x1a).api.plugins.proto.v1.IsSupportedResponse\x12\\\n" +
 	"\tIsHealthy\x12&.api.plugins.proto.v1.IsHealthyRequest\x1a'.api.plugins.proto.v1.IsHealthyResponse\x12\\\n" +
 	"\tIsDrainOk\x12&.api.plugins.proto.v1.IsDrainOkRequest\x1a'.api.plugins.proto.v1.IsDrainOkResponse\x12Y\n" +
 	"\bPreDrain\x12%.api.plugins.proto.v1.PreDrainRequest\x1a&.api.plugins.proto.v1.PreDrainResponse\x12\\\n" +
-	"\tPostDrain\x12&.api.plugins.proto.v1.PostDrainRequest\x1a'.api.plugins.proto.v1.PostDrainResponseB\xb5\x01\n" +
-	"\x18com.api.plugins.proto.v1B\x10DrainPluginProtoP\x01Z\x14api/plugins/proto/v1\xa2\x02\x03APP\xaa\x02\x14Api.Plugins.Proto.V1\xca\x02\x14Api\\Plugins\\Proto\\V1\xe2\x02 Api\\Plugins\\Proto\\V1\\GPBMetadata\xea\x02\x17Api::Plugins::Proto::V1b\x06proto3"
+	"\tPostDrain\x12&.api.plugins.proto.v1.PostDrainRequest\x1a'.api.plugins.proto.v1.PostDrainResponseB\xbd\x01\n" +
+	"\x18com.api.plugins.proto.v1B\x10DrainPluginProtoP\x01Z\x14api/plugins/proto/v1\xa2\x02\x03APP\xaa\x02\x14Api.Plugins.Proto.V1\xca\x02\x14Api\\Plugins\\Proto\\V1\xe2\x02 Api\\Plugins\\Proto\\V1\\GPBMetadata\xea\x02\x17Api::Plugins::Proto::V1\x92\x03\x05\xd2>\x02\x10\x03b\beditionsp\xe8\a"
 
-var (
-	file_api_plugins_proto_v1_drain_plugin_proto_rawDescOnce sync.Once
-	file_api_plugins_proto_v1_drain_plugin_proto_rawDescData []byte
-)
-
-func file_api_plugins_proto_v1_drain_plugin_proto_rawDescGZIP() []byte {
-	file_api_plugins_proto_v1_drain_plugin_proto_rawDescOnce.Do(func() {
-		file_api_plugins_proto_v1_drain_plugin_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_api_plugins_proto_v1_drain_plugin_proto_rawDesc), len(file_api_plugins_proto_v1_drain_plugin_proto_rawDesc)))
-	})
-	return file_api_plugins_proto_v1_drain_plugin_proto_rawDescData
-}
-
-var file_api_plugins_proto_v1_drain_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_api_plugins_proto_v1_drain_plugin_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_api_plugins_proto_v1_drain_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_api_plugins_proto_v1_drain_plugin_proto_goTypes = []any{
-	(*InitRequest)(nil),         // 0: api.plugins.proto.v1.InitRequest
-	(*InitResponse)(nil),        // 1: api.plugins.proto.v1.InitResponse
-	(*IsSupportedResponse)(nil), // 2: api.plugins.proto.v1.IsSupportedResponse
-	(*IsHealthyRequest)(nil),    // 3: api.plugins.proto.v1.IsHealthyRequest
-	(*IsHealthyResponse)(nil),   // 4: api.plugins.proto.v1.IsHealthyResponse
-	(*IsSupportedRequest)(nil),  // 5: api.plugins.proto.v1.IsSupportedRequest
-	(*IsDrainOkResponse)(nil),   // 6: api.plugins.proto.v1.IsDrainOkResponse
-	(*IsDrainOkRequest)(nil),    // 7: api.plugins.proto.v1.IsDrainOkRequest
-	(*PreDrainRequest)(nil),     // 8: api.plugins.proto.v1.PreDrainRequest
-	(*PreDrainResponse)(nil),    // 9: api.plugins.proto.v1.PreDrainResponse
-	(*PostDrainRequest)(nil),    // 10: api.plugins.proto.v1.PostDrainRequest
-	(*PostDrainResponse)(nil),   // 11: api.plugins.proto.v1.PostDrainResponse
+	(ConfigFormat)(0),           // 0: api.plugins.proto.v1.ConfigFormat
+	(*PluginInfoRequest)(nil),   // 1: api.plugins.proto.v1.PluginInfoRequest
+	(*PluginInfoResponse)(nil),  // 2: api.plugins.proto.v1.PluginInfoResponse
+	(*InitRequest)(nil),         // 3: api.plugins.proto.v1.InitRequest
+	(*InitResponse)(nil),        // 4: api.plugins.proto.v1.InitResponse
+	(*IsSupportedResponse)(nil), // 5: api.plugins.proto.v1.IsSupportedResponse
+	(*IsHealthyRequest)(nil),    // 6: api.plugins.proto.v1.IsHealthyRequest
+	(*IsHealthyResponse)(nil),   // 7: api.plugins.proto.v1.IsHealthyResponse
+	(*IsSupportedRequest)(nil),  // 8: api.plugins.proto.v1.IsSupportedRequest
+	(*IsDrainOkResponse)(nil),   // 9: api.plugins.proto.v1.IsDrainOkResponse
+	(*IsDrainOkRequest)(nil),    // 10: api.plugins.proto.v1.IsDrainOkRequest
+	(*PreDrainRequest)(nil),     // 11: api.plugins.proto.v1.PreDrainRequest
+	(*PreDrainResponse)(nil),    // 12: api.plugins.proto.v1.PreDrainResponse
+	(*PostDrainRequest)(nil),    // 13: api.plugins.proto.v1.PostDrainRequest
+	(*PostDrainResponse)(nil),   // 14: api.plugins.proto.v1.PostDrainResponse
 }
 var file_api_plugins_proto_v1_drain_plugin_proto_depIdxs = []int32{
-	0,  // 0: api.plugins.proto.v1.DrainService.Init:input_type -> api.plugins.proto.v1.InitRequest
-	5,  // 1: api.plugins.proto.v1.DrainService.IsSupported:input_type -> api.plugins.proto.v1.IsSupportedRequest
-	3,  // 2: api.plugins.proto.v1.DrainService.IsHealthy:input_type -> api.plugins.proto.v1.IsHealthyRequest
-	7,  // 3: api.plugins.proto.v1.DrainService.IsDrainOk:input_type -> api.plugins.proto.v1.IsDrainOkRequest
-	8,  // 4: api.plugins.proto.v1.DrainService.PreDrain:input_type -> api.plugins.proto.v1.PreDrainRequest
-	10, // 5: api.plugins.proto.v1.DrainService.PostDrain:input_type -> api.plugins.proto.v1.PostDrainRequest
-	1,  // 6: api.plugins.proto.v1.DrainService.Init:output_type -> api.plugins.proto.v1.InitResponse
-	2,  // 7: api.plugins.proto.v1.DrainService.IsSupported:output_type -> api.plugins.proto.v1.IsSupportedResponse
-	4,  // 8: api.plugins.proto.v1.DrainService.IsHealthy:output_type -> api.plugins.proto.v1.IsHealthyResponse
-	6,  // 9: api.plugins.proto.v1.DrainService.IsDrainOk:output_type -> api.plugins.proto.v1.IsDrainOkResponse
-	9,  // 10: api.plugins.proto.v1.DrainService.PreDrain:output_type -> api.plugins.proto.v1.PreDrainResponse
-	11, // 11: api.plugins.proto.v1.DrainService.PostDrain:output_type -> api.plugins.proto.v1.PostDrainResponse
-	6,  // [6:12] is the sub-list for method output_type
-	0,  // [0:6] is the sub-list for method input_type
-	0,  // [0:0] is the sub-list for extension type_name
-	0,  // [0:0] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+	0,  // 0: api.plugins.proto.v1.PluginInfoResponse.config_format:type_name -> api.plugins.proto.v1.ConfigFormat
+	1,  // 1: api.plugins.proto.v1.DrainService.PluginInfo:input_type -> api.plugins.proto.v1.PluginInfoRequest
+	3,  // 2: api.plugins.proto.v1.DrainService.Init:input_type -> api.plugins.proto.v1.InitRequest
+	8,  // 3: api.plugins.proto.v1.DrainService.IsSupported:input_type -> api.plugins.proto.v1.IsSupportedRequest
+	6,  // 4: api.plugins.proto.v1.DrainService.IsHealthy:input_type -> api.plugins.proto.v1.IsHealthyRequest
+	10, // 5: api.plugins.proto.v1.DrainService.IsDrainOk:input_type -> api.plugins.proto.v1.IsDrainOkRequest
+	11, // 6: api.plugins.proto.v1.DrainService.PreDrain:input_type -> api.plugins.proto.v1.PreDrainRequest
+	13, // 7: api.plugins.proto.v1.DrainService.PostDrain:input_type -> api.plugins.proto.v1.PostDrainRequest
+	2,  // 8: api.plugins.proto.v1.DrainService.PluginInfo:output_type -> api.plugins.proto.v1.PluginInfoResponse
+	4,  // 9: api.plugins.proto.v1.DrainService.Init:output_type -> api.plugins.proto.v1.InitResponse
+	5,  // 10: api.plugins.proto.v1.DrainService.IsSupported:output_type -> api.plugins.proto.v1.IsSupportedResponse
+	7,  // 11: api.plugins.proto.v1.DrainService.IsHealthy:output_type -> api.plugins.proto.v1.IsHealthyResponse
+	9,  // 12: api.plugins.proto.v1.DrainService.IsDrainOk:output_type -> api.plugins.proto.v1.IsDrainOkResponse
+	12, // 13: api.plugins.proto.v1.DrainService.PreDrain:output_type -> api.plugins.proto.v1.PreDrainResponse
+	14, // 14: api.plugins.proto.v1.DrainService.PostDrain:output_type -> api.plugins.proto.v1.PostDrainResponse
+	8,  // [8:15] is the sub-list for method output_type
+	1,  // [1:8] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_api_plugins_proto_v1_drain_plugin_proto_init() }
@@ -599,13 +1065,14 @@ func file_api_plugins_proto_v1_drain_plugin_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_plugins_proto_v1_drain_plugin_proto_rawDesc), len(file_api_plugins_proto_v1_drain_plugin_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   12,
+			NumEnums:      1,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_api_plugins_proto_v1_drain_plugin_proto_goTypes,
 		DependencyIndexes: file_api_plugins_proto_v1_drain_plugin_proto_depIdxs,
+		EnumInfos:         file_api_plugins_proto_v1_drain_plugin_proto_enumTypes,
 		MessageInfos:      file_api_plugins_proto_v1_drain_plugin_proto_msgTypes,
 	}.Build()
 	File_api_plugins_proto_v1_drain_plugin_proto = out.File

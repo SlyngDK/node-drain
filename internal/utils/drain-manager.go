@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/go-plugin"
 	"github.com/pkg/errors"
 	"github.com/slyngdk/node-drain/api/plugins"
+	pluginv1 "github.com/slyngdk/node-drain/api/plugins/proto/v1"
 	"github.com/slyngdk/node-drain/internal/config"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
@@ -148,16 +149,33 @@ func (d *DrainManager) initPlugin(ctx context.Context, l *zap.Logger, pluginBase
 		return nil, nil, fmt.Errorf("expected drain plugin %s: %T", pluginBase, v)
 	}
 
+	l.Debug("Getting plugin info")
+	pluginInfo, err := drainClient.PluginInfo(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get plugin info for plugin %s: %w", pluginBase, err)
+	}
+	if pluginInfo.ID == "" {
+		return nil, nil, fmt.Errorf("drain plugin %s has no ID", pluginBase)
+	}
+	if pluginInfo.ConfigFormat == pluginv1.ConfigFormat_CONFIG_FORMAT_UNSPECIFIED {
+		return nil, nil, fmt.Errorf("drain plugin %s has no ConfigFormat", pluginBase)
+	}
+
+	pluginConfigBytes, err := config.GetPluginConfig(pluginInfo.ConfigFormat, pluginInfo.ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get plugin config bytes %s: %w", pluginBase, err)
+	}
+
 	l.Debug("Calling drain plugin Init()")
-	info, err := drainClient.Init(ctx, Wrap(l), plugins.DrainPluginSettings{})
+	err = drainClient.Init(ctx, Wrap(l),
+		plugins.DrainPluginSettings{
+			Config: pluginConfigBytes,
+		})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to init plugin %s: %w", pluginBase, err)
 	}
 
-	if info.ID == "" {
-		return nil, nil, fmt.Errorf("drain plugin %s has no ID", pluginBase)
-	}
-	return &info, drainClient, nil
+	return &pluginInfo, drainClient, nil
 }
 
 func (d *DrainManager) IsClusterNodesHealthy(ctx context.Context) (bool, error) {

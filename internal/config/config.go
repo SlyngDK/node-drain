@@ -9,11 +9,13 @@ import (
 	"strings"
 	"time"
 
+	kjson "github.com/knadh/koanf/parsers/json"
 	kyaml "github.com/knadh/koanf/parsers/yaml"
 	kenv "github.com/knadh/koanf/providers/env/v2"
 	kfile "github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/knadh/koanf/v2"
+	pluginv1 "github.com/slyngdk/node-drain/api/plugins/proto/v1"
 )
 
 //go:embed default-config.yaml
@@ -130,4 +132,16 @@ func GetKoanf() *koanf.Koanf {
 
 func GetConfig() *Config {
 	return _config
+}
+
+func GetPluginConfig(format pluginv1.ConfigFormat, pluginId string) ([]byte, error) {
+	pluginConfig := GetKoanf().Cut(fmt.Sprintf("plugins.%s", pluginId))
+	switch format {
+	case pluginv1.ConfigFormat_CONFIG_FORMAT_JSON:
+		return pluginConfig.Marshal(kjson.Parser())
+	case pluginv1.ConfigFormat_CONFIG_FORMAT_YAML:
+		return pluginConfig.Marshal(kyaml.Parser())
+	default:
+		return nil, fmt.Errorf("unknown format: %s", format)
+	}
 }

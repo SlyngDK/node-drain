@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	DrainService_PluginInfo_FullMethodName  = "/api.plugins.proto.v1.DrainService/PluginInfo"
 	DrainService_Init_FullMethodName        = "/api.plugins.proto.v1.DrainService/Init"
 	DrainService_IsSupported_FullMethodName = "/api.plugins.proto.v1.DrainService/IsSupported"
 	DrainService_IsHealthy_FullMethodName   = "/api.plugins.proto.v1.DrainService/IsHealthy"
@@ -31,6 +32,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DrainServiceClient interface {
+	PluginInfo(ctx context.Context, in *PluginInfoRequest, opts ...grpc.CallOption) (*PluginInfoResponse, error)
 	Init(ctx context.Context, in *InitRequest, opts ...grpc.CallOption) (*InitResponse, error)
 	IsSupported(ctx context.Context, in *IsSupportedRequest, opts ...grpc.CallOption) (*IsSupportedResponse, error)
 	IsHealthy(ctx context.Context, in *IsHealthyRequest, opts ...grpc.CallOption) (*IsHealthyResponse, error)
@@ -45,6 +47,16 @@ type drainServiceClient struct {
 
 func NewDrainServiceClient(cc grpc.ClientConnInterface) DrainServiceClient {
 	return &drainServiceClient{cc}
+}
+
+func (c *drainServiceClient) PluginInfo(ctx context.Context, in *PluginInfoRequest, opts ...grpc.CallOption) (*PluginInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PluginInfoResponse)
+	err := c.cc.Invoke(ctx, DrainService_PluginInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *drainServiceClient) Init(ctx context.Context, in *InitRequest, opts ...grpc.CallOption) (*InitResponse, error) {
@@ -111,6 +123,7 @@ func (c *drainServiceClient) PostDrain(ctx context.Context, in *PostDrainRequest
 // All implementations should embed UnimplementedDrainServiceServer
 // for forward compatibility.
 type DrainServiceServer interface {
+	PluginInfo(context.Context, *PluginInfoRequest) (*PluginInfoResponse, error)
 	Init(context.Context, *InitRequest) (*InitResponse, error)
 	IsSupported(context.Context, *IsSupportedRequest) (*IsSupportedResponse, error)
 	IsHealthy(context.Context, *IsHealthyRequest) (*IsHealthyResponse, error)
@@ -126,6 +139,9 @@ type DrainServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDrainServiceServer struct{}
 
+func (UnimplementedDrainServiceServer) PluginInfo(context.Context, *PluginInfoRequest) (*PluginInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PluginInfo not implemented")
+}
 func (UnimplementedDrainServiceServer) Init(context.Context, *InitRequest) (*InitResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Init not implemented")
 }
@@ -162,6 +178,24 @@ func RegisterDrainServiceServer(s grpc.ServiceRegistrar, srv DrainServiceServer)
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&DrainService_ServiceDesc, srv)
+}
+
+func _DrainService_PluginInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PluginInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DrainServiceServer).PluginInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DrainService_PluginInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DrainServiceServer).PluginInfo(ctx, req.(*PluginInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _DrainService_Init_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -279,6 +313,10 @@ var DrainService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "api.plugins.proto.v1.DrainService",
 	HandlerType: (*DrainServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "PluginInfo",
+			Handler:    _DrainService_PluginInfo_Handler,
+		},
 		{
 			MethodName: "Init",
 			Handler:    _DrainService_Init_Handler,
