@@ -5,22 +5,27 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/slyngdk/node-drain/api/plugins"
+	pluginv1 "github.com/slyngdk/node-drain/api/plugins/proto/v1"
 )
 
 type ExampleDrainPlugin struct {
 	logger hclog.Logger
 }
 
+func (e *ExampleDrainPlugin) PluginInfo(_ context.Context) (plugins.DrainPluginInfo, error) {
+	return plugins.DrainPluginInfo{
+		ID:           "example-plugin",
+		ConfigFormat: pluginv1.ConfigFormat_CONFIG_FORMAT_YAML,
+	}, nil
+}
+
 func (e *ExampleDrainPlugin) Init(
 	ctx context.Context,
 	logger hclog.Logger,
-	settings plugins.DrainPluginSettings) (plugins.DrainPluginInfo, error) {
+	settings plugins.DrainPluginSettings) error {
 	e.logger = logger
 	e.logger.Debug("Init()")
-
-	return plugins.DrainPluginInfo{
-		ID: "example-plugin",
-	}, nil
+	return nil
 }
 
 func (e *ExampleDrainPlugin) IsSupported(ctx context.Context) (bool, error) {

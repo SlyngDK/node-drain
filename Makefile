@@ -52,7 +52,7 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
-generate: controller-gen buf ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+generate: controller-gen protoc-gen-go protoc-gen-go-grpc buf ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(BUF) generate
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
@@ -201,6 +201,8 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 BUF = $(LOCALBIN)/buf
+PROTOC_GEN_GO = $(LOCALBIN)/protoc-gen-go
+PROTOC_GEN_GO_GRPC = $(LOCALBIN)/protoc-gen-go-grpc
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
@@ -209,8 +211,10 @@ CONTROLLER_TOOLS_VERSION ?= v0.18.0
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
-GOLANGCI_LINT_VERSION ?= v2.3.0
-BUF_VERSION ?= v1.56.0
+GOLANGCI_LINT_VERSION ?= v2.4.0
+BUF_VERSION ?= v1.57.2
+PROTOC_GEN_GO_VERSION ?= v1.36.9
+PROTOC_GEN_GO_GRPC_VERSION ?= v1.5.1
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -226,6 +230,16 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 buf: $(BUF) ## Download buf locally if necessary.
 $(BUF): $(LOCALBIN)
 	$(call go-install-tool,$(BUF),github.com/bufbuild/buf/cmd/buf,$(BUF_VERSION))
+
+.PHONY: protoc-gen-go
+protoc-gen-go: $(PROTOC_GEN_GO) ## Download protoc-gen-go locally if necessary.
+$(PROTOC_GEN_GO): $(LOCALBIN)
+	$(call go-install-tool,$(PROTOC_GEN_GO),google.golang.org/protobuf/cmd/protoc-gen-go,$(PROTOC_GEN_GO_VERSION))
+
+.PHONY: protoc-gen-go-grpc
+protoc-gen-go-grpc: $(PROTOC_GEN_GO_GRPC) ## Download protoc-gen-go-grpc locally if necessary.
+$(PROTOC_GEN_GO_GRPC): $(LOCALBIN)
+	$(call go-install-tool,$(PROTOC_GEN_GO_GRPC),google.golang.org/grpc/cmd/protoc-gen-go-grpc,$(PROTOC_GEN_GO_GRPC_VERSION))
 
 .PHONY: setup-envtest
 setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.

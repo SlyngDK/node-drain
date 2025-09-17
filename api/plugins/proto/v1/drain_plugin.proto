@@ -1,13 +1,29 @@
-syntax = "proto3";
+edition = "2023";
 package api.plugins.proto.v1;
 
+import "google/protobuf/go_features.proto";
+
+option features.(pb.go).api_level = API_OPAQUE;
 option go_package = "api/plugins/proto/v1";
 
-message InitRequest {}
-
-message InitResponse {
-  string id = 1;
+enum ConfigFormat {
+  CONFIG_FORMAT_UNSPECIFIED = 0;
+  CONFIG_FORMAT_YAML = 1;
+  CONFIG_FORMAT_JSON = 2;
 }
+
+message PluginInfoRequest {}
+
+message PluginInfoResponse {
+  string id = 1;
+  ConfigFormat config_format = 2;
+}
+
+message InitRequest {
+  bytes config = 1;
+}
+
+message InitResponse {}
 
 message IsSupportedResponse {
   bool supported = 1;
@@ -39,6 +55,7 @@ message PostDrainRequest {
 message PostDrainResponse {}
 
 service DrainService {
+  rpc PluginInfo(PluginInfoRequest) returns (PluginInfoResponse);
   rpc Init(InitRequest) returns (InitResponse);
   rpc IsSupported(IsSupportedRequest) returns (IsSupportedResponse);
   rpc IsHealthy(IsHealthyRequest) returns (IsHealthyResponse);
