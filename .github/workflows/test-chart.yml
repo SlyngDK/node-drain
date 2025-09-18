@@ -53,7 +53,6 @@ jobs:
 
       - name: Prepare nodedrain
         run: |
-          go mod tidy
           make docker-build
           kind load docker-image ${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG}
 
@@ -108,3 +107,7 @@ jobs:
 #      - name: Check Presence of ServiceMonitor
 #        run: |
 #          kubectl wait --namespace nodedrain-system --for=jsonpath='{.kind}'=ServiceMonitor servicemonitor/nodedrain-controller-manager-metrics-monitor
+
+      - name: Delete kind cluster
+        run: |          
+          kind delete cluster

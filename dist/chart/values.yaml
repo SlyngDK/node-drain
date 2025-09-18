@@ -51,6 +51,15 @@ plugins: []
 # [RBAC]: To enable RBAC (Permissions) configurations
 rbac:
   enable: true
+  additional:
+    clusterRules: []
+    # Additional rules for the release namespace
+    rules: []
+
+    #    namespaces:
+    #      - name: default # Namespace to apply rules to
+    #        rules: []
+    namespaces: []
 
 # [CRDs]: To enable the CRDs
 crd:

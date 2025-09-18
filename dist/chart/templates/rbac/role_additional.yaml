@@ -1,0 +1,85 @@
+{{- if .Values.rbac.enable }}
+{{- if gt (.Values.rbac.additional.clusterRules | default list | len) 0 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  name: nodedrain-manager-role-additional
+rules: {{ .Values.rbac.additional.clusterRules | toYaml | nindent 2}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  name: nodedrain-manager-rolebinding-additional
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nodedrain-manager-role-additional
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.controllerManager.serviceAccountName }}
+    namespace: {{ .Release.Namespace }}
+{{- end -}}
+{{- if gt (.Values.rbac.additional.rules | default list | len) 0 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  name: nodedrain-manager-role-additional
+  namespace: {{ .Release.Namespace }}
+rules: {{ .Values.rbac.additional.rules | toYaml | nindent 2}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  name: nodedrain-manager-rolebinding-additional
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nodedrain-manager-role-additional
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.controllerManager.serviceAccountName }}
+    namespace: {{ .Release.Namespace }}
+{{- end -}}
+{{- if gt (.Values.rbac.additional.namespaces | default list | len) 0 }}
+{{- range .Values.rbac.additional.namespaces }}
+{{- if and (gt (.name | default "" | len) 0) (gt (.rules | default list | len) 0) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    {{- include "chart.labels" $ | nindent 4 }}
+  name: nodedrain-manager-role-additional
+  namespace: {{ .name }}
+rules: {{ .rules | toYaml | nindent 2}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    {{- include "chart.labels" $ | nindent 4 }}
+  name: nodedrain-manager-rolebinding-additional
+  namespace: {{ .name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nodedrain-manager-role-additional
+subjects:
+  - kind: ServiceAccount
+    name: {{ $.Values.controllerManager.serviceAccountName }}
+    namespace: {{ $.Release.Namespace }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
