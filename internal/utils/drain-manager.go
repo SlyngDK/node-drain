@@ -218,7 +218,7 @@ func (d *DrainManager) IsHealthy(ctx context.Context) (bool, error) {
 			return false, err
 		}
 		if !isSupported {
-			d.l.Debug("Plugin not supported")
+			l.Debug("Plugin not supported")
 			continue
 		}
 
@@ -228,7 +228,7 @@ func (d *DrainManager) IsHealthy(ctx context.Context) (bool, error) {
 			return false, err
 		}
 		if !isHealthy {
-			d.l.Warn("Plugin is not healthy")
+			l.Warn("Plugin is not healthy")
 			allModulesHealthy = false
 			continue
 		}
@@ -250,7 +250,7 @@ func (d *DrainManager) IsDrainOk(ctx context.Context, nodeName string) (bool, er
 			return false, err
 		}
 		if !isSupported {
-			d.l.Debug("Plugin not supported")
+			lp.Debug("Plugin not supported")
 			continue
 		}
 
@@ -280,7 +280,7 @@ func (d *DrainManager) RunPreDrain(ctx context.Context, nodeName string) error {
 			return err
 		}
 		if !isSupported {
-			d.l.Debug("Plugin not supported")
+			lp.Debug("Plugin not supported")
 			continue
 		}
 
@@ -307,7 +307,7 @@ func (d *DrainManager) RunPostDrain(ctx context.Context, nodeName string) error 
 			return err
 		}
 		if !isSupported {
-			d.l.Debug("Plugin not supported")
+			lp.Debug("Plugin not supported")
 			continue
 		}
 
