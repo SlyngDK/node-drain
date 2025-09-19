@@ -237,7 +237,9 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	if node.Status.CurrentState.WorkState() {
-		if node.Spec.State == drainv1.NodeStateRebootIfRequired && !node.Status.Drained {
+		if node.Spec.State == drainv1.NodeStateRebootIfRequired &&
+			(node.Status.CurrentState == drainv1.NodeCurrentStateNext ||
+				node.Status.CurrentState == drainv1.NodeCurrentStateDrained) {
 			var err error
 			required := false
 			if node.Status.RebootRequiredLastChecked == nil ||
