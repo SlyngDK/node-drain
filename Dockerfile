@@ -38,7 +38,7 @@ CMD ["cp", "-v", "/example-plugin.so", "/plugins/example-plugin.so"]
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:debug-nonroot AS controller
+FROM gcr.io/distroless/static:nonroot AS controller
 WORKDIR /
 COPY --from=builder /workspace/manager .
 USER 65532:65532
