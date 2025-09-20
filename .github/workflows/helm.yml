@@ -1,5 +1,4 @@
-name: Build
-
+name: Helm package
 on:
   push:
     paths-ignore:
@@ -20,7 +19,7 @@ on:
 
 
 jobs:
-  container-build:
+  helm-package:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,8 +28,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
       - uses: ./.github/workflows/env_setup
-        with:
-          docker_cache_enabled: true
+
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Verify Helm installation
+        run: helm version
 
       - name: Login to GitHub Container Registry
         if: env.PROTECTED_RUN == 'true'
@@ -40,18 +44,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build image
-        id: build_image
+      - name: Helm package
         run: |
-          export IMG_TAG=ci-${{ github.ref_name }}
-          if [[ "${{ github.ref_type }}" == "branch" && "${{ github.ref_name }}" == "main" ]]; then
-            export IMG_TAG=latest
-          elif [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            export IMG_TAG=$(echo -n "${{ github.ref_name }}" | sed 's/^v//g')
+          export VERSION=999
+          if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            export VERSION=$(echo -n "${{ github.ref_name }}" | sed 's/^v//g')
           fi
-          export IMG_TAG=${IMG_TAG//\//-}
-          echo "IMG_TAG=${IMG_TAG}" >> $GITHUB_OUTPUT
-          if [[ "${PROTECTED_RUN}" == "true" ]]; then
-            export DOCKER_BUILD_OPTIONS="--push"
+          helm package dist/chart -u --version ${VERSION} --app-version ${VERSION}
+          if [[ "${VERSION}" != "999" && "${PROTECTED_RUN}" == "true" ]]; then
+            helm push "nodedrain-${VERSION}.tgz" "oci://ghcr.io/slyngdk/charts"
           fi
-          make docker-build
