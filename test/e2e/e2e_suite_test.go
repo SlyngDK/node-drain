@@ -46,6 +46,7 @@ var (
 			fmt.Sprintf("IMG_REGISTRY=%s", projectRegistry),
 			fmt.Sprintf("IMG_NAME_CONTROLLER=%s", projectControllerImage),
 			fmt.Sprintf("IMG_TAG=%s", projectImageTag),
+			"DOCKER_BUILD_OPTIONS=--load",
 		}
 	}
 )
