@@ -45,3 +45,7 @@ runs:
         builder: ${{ steps.setup-buildx.outputs.name }}
         cache-dir: go-build-cache
         dockerfile: Dockerfile
+
+    - name: Expose GitHub Runtime
+      uses: crazy-max/ghaction-github-runtime@v3
+      if: inputs.docker_cache_enabled == 'true' && !env.ACT
