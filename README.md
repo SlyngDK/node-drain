@@ -67,7 +67,7 @@ make test-e2e
 
 ### Build and push image
 ```bash
-make docker-build docker-push IMG_REGISTRY=localhost:5000 IMG_NAME_CONTROLLER=controller IMG_TAG=latest
+make docker-build IMG_REGISTRY=localhost:5000 IMG_NAME_CONTROLLER=controller IMG_TAG=latest DOCKER_BUILD_OPTIONS=--push
 ```
 
 ### Sample config

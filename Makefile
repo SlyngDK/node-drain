@@ -123,11 +123,6 @@ docker-build:
 	$(CONTAINER_TOOL) buildx build --target controller $(DOCKER_BUILD_OPTIONS) $(DOCKER_BUILD_OPTIONS_CONTROLLER) -t $(IMG_REGISTRY_FULL)$(IMG_NAME_CONTROLLER):$(IMG_TAG) .
 	$(CONTAINER_TOOL) buildx build --target example-plugin $(DOCKER_BUILD_OPTIONS) $(DOCKER_BUILD_OPTIONS_EXAM_PLUGIN) -t $(IMG_REGISTRY_FULL)$(IMG_NAME_EXAM_PLUGIN):$(IMG_TAG) .
 
-.PHONY: docker-push
-docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push $(IMG_REGISTRY_FULL)$(IMG_NAME_CONTROLLER):$(IMG_TAG)
-	$(CONTAINER_TOOL) push $(IMG_REGISTRY_FULL)$(IMG_NAME_EXAM_PLUGIN):$(IMG_TAG)
-
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator IMG_TAG=0.0.1). To use this option you need to:
 # - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
@@ -274,7 +269,7 @@ minikube-start:
     	minikube start -p nodedrain --embed-certs=true --interactive=false --install-addons=false --nodes=2 ;\
     	minikube -p nodedrain addons enable registry ;\
     };
-	[ ! "$$($(CONTAINER_TOOL) ps -a -q -f name=nodedrain-registry-proxy)" ] &&	$(CONTAINER_TOOL) run --rm -d --name nodedrain-registry-proxy --network=host alpine ash -c "apk add socat && socat TCP-LISTEN:5000,reuseaddr,fork TCP:$$(minikube -p nodedrain ip):5000" || true
+	[ "$$($(CONTAINER_TOOL) ps -a -q -f name=nodedrain-registry-proxy)" ] && true || $(CONTAINER_TOOL) run --rm -d --name nodedrain-registry-proxy --network=host alpine ash -c "apk add socat && socat TCP-LISTEN:5000,reuseaddr,fork TCP:$$(minikube -p nodedrain ip):5000"
 	timeout 300 bash -c 'while [[ "$$(curl -s -o /dev/null -w ''%{http_code}'' localhost:5000)" != "200" ]]; do sleep 1; done' || false
 
 
@@ -295,5 +290,5 @@ minikube-cert-manager:
 
 .PHONY: minikube-deploy
 minikube-deploy: manifests generate minikube-start minikube-cert-manager
-	$(MAKE) -e IMG_REGISTRY=localhost:5000/ -e KUBE_CONTEXT=nodedrain -e KUSTOMIZE_CONFIG=dev docker-build docker-push deploy
+	$(MAKE) docker-build deploy IMG_REGISTRY=localhost:5000/ KUBE_CONTEXT=nodedrain KUSTOMIZE_CONFIG=dev DOCKER_BUILD_OPTIONS=--push
 	$(KUBECTL) --context nodedrain rollout restart deployment nodedrain-controller-manager -n nodedrain-system
