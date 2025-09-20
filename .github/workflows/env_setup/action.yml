@@ -12,6 +12,8 @@ runs:
         echo "IMG_REGISTRY=ghcr.io/slyngdk/" >> $GITHUB_ENV
         echo "IMG_NAME_CONTROLLER=nodedrain-controller" >> $GITHUB_ENV
         echo "IMG_NAME_EXAM_PLUGIN=nodedrain-example-plugin" >> $GITHUB_ENV
+        echo "BRANCH_NAME=${{ github.head_ref || github.ref_name }}" >> $GITHUB_ENV
+        echo "BRANCH_NAME_HASH=$(echo -n ${{ github.head_ref || github.ref_name }} | md5sum | cut -d" " -f1 -z)" >> $GITHUB_ENV
 
     - shell: bash
       if: (github.ref == 'refs/heads/main' || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && !env.ACT
@@ -21,12 +23,21 @@ runs:
     - shell: bash
       if: inputs.docker_cache_enabled == 'true'
       run: |
-        echo "DOCKER_BUILD_OPTIONS_CONTROLLER=--cache-to type=gha,mode=max,scope=controller-${{ github.ref_name }} --cache-from type=gha,scope=controller-${{ github.ref_name }} --cache-from type=gha,scope=controller-main" >> $GITHUB_ENV
-        echo "DOCKER_BUILD_OPTIONS_EXAM_PLUGIN=--cache-to type=gha,mode=max,scope=example-plugin-${{ github.ref_name }} --cache-from type=gha,scope=example-plugin-${{ github.ref_name }} --cache-from type=gha,scope=example-plugin-main" >> $GITHUB_ENV
+        echo "DOCKER_BUILD_OPTIONS_CONTROLLER=--cache-to type=gha,mode=max,scope=controller-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=controller-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=controller-main" >> $GITHUB_ENV
+        echo "DOCKER_BUILD_OPTIONS_EXAM_PLUGIN=--cache-to type=gha,mode=max,scope=example-plugin-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=example-plugin-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=example-plugin-main" >> $GITHUB_ENV
 
     - uses: docker/setup-buildx-action@v3
       if: inputs.docker_cache_enabled == 'true'
       id: setup-buildx
+
+    - name: Calculate Docker image context hash
+      id: context-hash
+      uses: 5monkeys/docker-image-context-hash-action@v2.0.0
+      if: inputs.docker_cache_enabled == 'true'
+      with:
+        extra_tree_objects: |
+          .dockerignore
+          Dockerfile
 
     - name: Go Build Cache for Docker
       uses: actions/cache@v4
@@ -34,9 +45,10 @@ runs:
       id: cache
       with:
         path: go-build-cache
-        key: ${{ runner.os }}-go-build-cache-${{ hashFiles('**/go.sum') }}
+        key: ${{ runner.os }}-go-build-cache-${{ env.BRANCH_NAME_HASH }}-${{ steps.context-hash.outputs.hash }}
         restore-keys: |
-          ${{ runner.os }}-go-build-cache-
+          ${{ runner.os }}-go-build-cache-${{ env.BRANCH_NAME_HASH }}-
+          ${{ runner.os }}-go-build-cache-main-
 
     - name: Restore Docker cache mounts
       uses: reproducible-containers/buildkit-cache-dance@v3.3.0
@@ -45,6 +57,7 @@ runs:
         builder: ${{ steps.setup-buildx.outputs.name }}
         cache-dir: go-build-cache
         dockerfile: Dockerfile
+        skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
     - name: Expose GitHub Runtime
       uses: crazy-max/ghaction-github-runtime@v3
