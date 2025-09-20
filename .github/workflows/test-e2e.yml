@@ -26,6 +26,10 @@ jobs:
       - name: Clone the code
         uses: actions/checkout@v4
 
+      - uses: ./.github/workflows/env_setup
+        with:
+          docker_cache_enabled: true
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -42,5 +46,4 @@ jobs:
 
       - name: Running Test e2e
         run: |
-          go mod tidy
           make test-e2e

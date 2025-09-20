@@ -7,13 +7,6 @@ KUBE_CONTEXT ?= kind-nodedrain-test-e2e
 KUSTOMIZE_CONFIG ?= default
 IMG_REGISTRY_FULL := $(if ${IMG_REGISTRY},$(patsubst %/,%,${IMG_REGISTRY})/)
 
-# Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
-ifeq (,$(shell go env GOBIN))
-GOBIN=$(shell go env GOPATH)/bin
-else
-GOBIN=$(shell go env GOBIN)
-endif
-
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
@@ -126,9 +119,9 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
-docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build --target controller -t $(IMG_REGISTRY_FULL)$(IMG_NAME_CONTROLLER):$(IMG_TAG) .
-	$(CONTAINER_TOOL) build --target example-plugin -t $(IMG_REGISTRY_FULL)$(IMG_NAME_EXAM_PLUGIN):$(IMG_TAG) .
+docker-build:
+	$(CONTAINER_TOOL) buildx build --target controller $(DOCKER_BUILD_OPTIONS) $(DOCKER_BUILD_OPTIONS_CONTROLLER) -t $(IMG_REGISTRY_FULL)$(IMG_NAME_CONTROLLER):$(IMG_TAG) .
+	$(CONTAINER_TOOL) buildx build --target example-plugin $(DOCKER_BUILD_OPTIONS) $(DOCKER_BUILD_OPTIONS_EXAM_PLUGIN) -t $(IMG_REGISTRY_FULL)$(IMG_NAME_EXAM_PLUGIN):$(IMG_TAG) .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.

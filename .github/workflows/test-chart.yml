@@ -19,9 +19,6 @@ on:
       - '*.txt'
 
 env:
-  IMG_REGISTRY: ghcr.io/slyngdk/
-  IMG_NAME_CONTROLLER: nodedrain-controller
-  IMG_NAME_EXAM_PLUGIN: nodedrain-example-plugin
   IMG_TAG: test-chart
   KIND_CLUSTER_NAME: nodedrain-test-chart
 
@@ -32,10 +29,9 @@ jobs:
       - name: Clone the code
         uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: ./.github/workflows/env_setup
         with:
-          go-version-file: go.mod
+          docker_cache_enabled: true
 
       - name: Install the latest version of kind
         run: |
@@ -53,7 +49,7 @@ jobs:
 
       - name: Prepare nodedrain
         run: |
-          make docker-build
+          make docker-build DOCKER_BUILD_OPTIONS=--load
           kind load docker-image ${IMG_REGISTRY}${IMG_NAME_CONTROLLER}:${IMG_TAG}
 
       - name: Install Helm

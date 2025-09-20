@@ -30,7 +30,10 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Checking go mod tidy
+        run: |
+          go mod tidy -diff
+
       - name: Running Tests
         run: |
-          go mod tidy
           make test
