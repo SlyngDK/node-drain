@@ -26,13 +26,13 @@ runs:
         echo "DOCKER_BUILD_OPTIONS_CONTROLLER=--cache-to type=gha,mode=max,scope=controller-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=controller-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=controller-main" >> $GITHUB_ENV
         echo "DOCKER_BUILD_OPTIONS_EXAM_PLUGIN=--cache-to type=gha,mode=max,scope=example-plugin-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=example-plugin-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=example-plugin-main" >> $GITHUB_ENV
 
-    - uses: docker/setup-buildx-action@v3
+    - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       if: inputs.docker_cache_enabled == 'true'
       id: setup-buildx
 
     - name: Calculate Docker image context hash
       id: context-hash
-      uses: 5monkeys/docker-image-context-hash-action@v2.0.0
+      uses: 5monkeys/docker-image-context-hash-action@cb907ab60f4f41260cc1607af1d2e76c5d2306db # v2.0.0
       if: inputs.docker_cache_enabled == 'true'
       with:
         extra_tree_objects: |
@@ -40,7 +40,7 @@ runs:
           Dockerfile
 
     - name: Go Build Cache for Docker
-      uses: actions/cache@v4
+      uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
       if: inputs.docker_cache_enabled == 'true'
       id: cache
       with:
@@ -51,7 +51,7 @@ runs:
           ${{ runner.os }}-go-build-cache-main-
 
     - name: Restore Docker cache mounts
-      uses: reproducible-containers/buildkit-cache-dance@v3.3.0
+      uses: reproducible-containers/buildkit-cache-dance@5b81f4d29dc8397a7d341dba3aeecc7ec54d6361 #v3.3.0
       if: inputs.docker_cache_enabled == 'true'
       with:
         builder: ${{ steps.setup-buildx.outputs.name }}
@@ -60,5 +60,5 @@ runs:
         skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
     - name: Expose GitHub Runtime
-      uses: crazy-max/ghaction-github-runtime@v3
+      uses: crazy-max/ghaction-github-runtime@3cb05d89e1f492524af3d41a1c98c83bc3025124 # v3.1.0
       if: inputs.docker_cache_enabled == 'true' && !env.ACT
