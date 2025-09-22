@@ -3,6 +3,7 @@ package utils
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,17 +12,20 @@ import (
 	"strings"
 
 	"github.com/hashicorp/go-plugin"
-	"github.com/pkg/errors"
 	"github.com/slyngdk/node-drain/api/plugins"
 	pluginv1 "github.com/slyngdk/node-drain/api/plugins/proto/v1"
+	drainv1 "github.com/slyngdk/node-drain/api/v1"
 	"github.com/slyngdk/node-drain/internal/config"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	kClient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+const pluginNotSupported = "Plugin not supported"
 
 type drainClientInfo struct {
 	*plugins.DrainClient
@@ -32,12 +36,13 @@ type DrainManager struct {
 	l             *zap.Logger
 	client        kClient.Client
 	clientSet     *kubernetes.Clientset
+	recorder      record.EventRecorder
 	pluginClients map[string]*plugin.Client
 	drainClients  map[string]drainClientInfo
 	pluginFileId  map[string]string
 }
 
-func NewDrainManager(ctx context.Context, client kClient.Client, restConfig *rest.Config) (*DrainManager, error) {
+func NewDrainManager(ctx context.Context, client kClient.Client, restConfig *rest.Config, recorder record.EventRecorder) (*DrainManager, error) {
 	l, err := config.GetNamedLogger("drain-plugin-client")
 	if err != nil {
 		return nil, err
@@ -52,6 +57,7 @@ func NewDrainManager(ctx context.Context, client kClient.Client, restConfig *res
 		l:            l,
 		client:       client,
 		clientSet:    clientSet,
+		recorder:     recorder,
 		drainClients: make(map[string]drainClientInfo),
 		pluginFileId: make(map[string]string),
 	}
@@ -192,7 +198,7 @@ func (d *DrainManager) IsClusterNodesHealthy(ctx context.Context) (bool, error) 
 		for _, condition := range node.Status.Conditions {
 			if condition.Type == corev1.NodeReady {
 				if condition.Status != corev1.ConditionTrue {
-					d.l.Warn("node is not ready", zap.String("node.name", node.Name), zap.String("node.ready", string(condition.Status)))
+					d.l.Warn("node is not ready", zap.String(config.LogNodeName, node.Name), zap.String("node.ready", string(condition.Status)))
 					allNodesAreReady = false
 				}
 			}
@@ -201,124 +207,167 @@ func (d *DrainManager) IsClusterNodesHealthy(ctx context.Context) (bool, error) 
 	return allNodesAreReady, nil
 }
 
-func (d *DrainManager) IsHealthy(ctx context.Context) (bool, error) {
+func (d *DrainManager) IsHealthy(ctx context.Context, node *drainv1.Node) (bool, error) {
 	d.l.Debug("Checking if cluster is healthy, including drain plugins.")
 	healthy, err := d.IsClusterNodesHealthy(ctx)
 	if !healthy || err != nil {
+		d.recorder.Eventf(node, corev1.EventTypeWarning, "Healthy", "Cluster nodes is not healthy: %t err: %v", healthy, err)
 		return false, err
 	}
 
 	allModulesHealthy := true
+	errs := make([]error, 0)
+	pluginStatus := make([]string, 0, len(d.drainClients))
 
 	for id, client := range d.drainClients {
-		l := d.l.With(zap.String("plugin.id", id))
-		l.Debug("Checking if drain plugin is supported")
+		l := d.l.With(zap.String(config.LogPluginId, id))
 		isSupported, err := client.IsSupported(ctx)
 		if err != nil {
-			return false, err
+			allModulesHealthy = false
+			errs = append(errs, err)
+			pluginStatus = append(pluginStatus, pluginEventError(id, err))
+			continue
 		}
 		if !isSupported {
-			l.Debug("Plugin not supported")
+			l.Debug(pluginNotSupported)
+			pluginStatus = append(pluginStatus, fmt.Sprintf("%s: %s", id, pluginNotSupported))
 			continue
 		}
 
 		l.Debug("Checking if drain plugin is healthy")
 		isHealthy, err := client.IsHealthy(ctx)
 		if err != nil {
-			return false, err
+			allModulesHealthy = false
+			errs = append(errs, err)
+			pluginStatus = append(pluginStatus, pluginEventError(id, err))
+			continue
 		}
 		if !isHealthy {
 			l.Warn("Plugin is not healthy")
 			allModulesHealthy = false
+			pluginStatus = append(pluginStatus, fmt.Sprintf("%s: Not healthy", id))
 			continue
 		}
-	}
 
+		pluginStatus = append(pluginStatus, fmt.Sprintf("%s: OK", id))
+	}
+	eventType := corev1.EventTypeNormal
+	if !allModulesHealthy || len(errs) > 0 {
+		eventType = corev1.EventTypeWarning
+	}
+	d.recorder.Eventf(node, eventType, "Healthy", "IsHealthy:\n%s", strings.Join(pluginStatus, "\n"))
+
+	if len(errs) != 0 {
+		return false, errors.Join(errs...)
+	}
 	return allModulesHealthy, err
 }
 
-func (d *DrainManager) IsDrainOk(ctx context.Context, nodeName string) (bool, error) {
-	l := d.l.With(zap.String("node.name", nodeName))
+func (d *DrainManager) IsDrainOk(ctx context.Context, node *drainv1.Node) (bool, error) {
+	l := d.l.With(zap.String(config.LogNodeName, node.Name))
 	l.Debug("Checking if drain is OK")
 	allModulesReadyToDrain := true
+	errs := make([]error, 0)
+	pluginStatus := make([]string, 0, len(d.drainClients))
 
 	for id, client := range d.drainClients {
-		lp := l.With(zap.String("plugin.id", id))
-		lp.Debug("Checking if drain plugin is supported")
+		lp := l.With(zap.String(config.LogPluginId, id))
 		isSupported, err := client.IsSupported(ctx)
 		if err != nil {
-			return false, err
+			allModulesReadyToDrain = false
+			errs = append(errs, err)
+			pluginStatus = append(pluginStatus, pluginEventError(id, err))
+			continue
 		}
 		if !isSupported {
-			lp.Debug("Plugin not supported")
+			lp.Debug(pluginNotSupported)
+			pluginStatus = append(pluginStatus, fmt.Sprintf("%s: %s", id, pluginNotSupported))
 			continue
 		}
 
-		isDrainOk, err := client.IsDrainOk(ctx, nodeName)
+		isDrainOk, err := client.IsDrainOk(ctx, node.Name)
 		if err != nil {
-			return false, err
+			allModulesReadyToDrain = false
+			errs = append(errs, err)
+			pluginStatus = append(pluginStatus, pluginEventError(id, err))
+			continue
 		}
 		if !isDrainOk {
 			lp.Warn("plugin is not ready to be drained")
 			allModulesReadyToDrain = false
+			pluginStatus = append(pluginStatus, fmt.Sprintf("%s: Not ready to be drained", id))
 			continue
 		}
+
+		pluginStatus = append(pluginStatus, fmt.Sprintf("%s: OK", id))
+	}
+
+	eventType := corev1.EventTypeNormal
+	if !allModulesReadyToDrain || len(errs) > 0 {
+		eventType = corev1.EventTypeWarning
+	}
+	d.recorder.Eventf(node, eventType, "DrainOK", "IsDrainOK:\n%s", strings.Join(pluginStatus, "\n"))
+
+	if len(errs) != 0 {
+		return false, errors.Join(errs...)
 	}
 
 	return allModulesReadyToDrain, nil
 }
 
-func (d *DrainManager) RunPreDrain(ctx context.Context, nodeName string) error {
-	l := d.l.With(zap.String("node.name", nodeName))
+func (d *DrainManager) RunPreDrain(ctx context.Context, node *drainv1.Node) error {
+	l := d.l.With(zap.String(config.LogNodeName, node.Name))
 	l.Debug("Run PreDrain")
 
 	for id, client := range d.drainClients {
-		lp := l.With(zap.String("plugin.id", id))
-		lp.Debug("Checking if drain plugin is supported")
+		lp := l.With(zap.String(config.LogPluginId, id))
 		isSupported, err := client.IsSupported(ctx)
 		if err != nil {
 			return err
 		}
 		if !isSupported {
-			lp.Debug("Plugin not supported")
+			lp.Debug(pluginNotSupported)
 			continue
 		}
 
 		lp.Debug("Running plugin PreDrain")
-		err = client.PreDrain(ctx, nodeName)
+		err = client.PreDrain(ctx, node.Name)
 		if err != nil {
 			lp.Debug("Plugin PreDrain failed", zap.Error(err))
-			return errors.Wrapf(err, "failed PreDrain on plugin: %s", id)
+			d.recorder.Eventf(node, corev1.EventTypeWarning, "PreDrain", "PreDrain failed for %s: %v", id, err)
+			return fmt.Errorf("failed PreDrain on plugin: %s %w", id, err)
 		}
 		lp.Debug("Plugin PreDrain succeeded without errors")
 	}
+	d.recorder.Eventf(node, corev1.EventTypeNormal, "PreDrain", "Node PreDrain succeeded")
 	return nil
 }
 
-func (d *DrainManager) RunPostDrain(ctx context.Context, nodeName string) error {
-	l := d.l.With(zap.String("node.name", nodeName))
+func (d *DrainManager) RunPostDrain(ctx context.Context, node *drainv1.Node) error {
+	l := d.l.With(zap.String(config.LogNodeName, node.Name))
 	l.Debug("Run PostDrain")
 
 	for id, client := range d.drainClients {
-		lp := l.With(zap.String("plugin.id", id))
-		lp.Debug("Checking if drain plugin is supported")
+		lp := l.With(zap.String(config.LogPluginId, id))
 		isSupported, err := client.IsSupported(ctx)
 		if err != nil {
 			return err
 		}
 		if !isSupported {
-			lp.Debug("Plugin not supported")
+			lp.Debug(pluginNotSupported)
 			continue
 		}
 
 		lp.Debug("Running plugin PostDrain")
-		err = client.PostDrain(ctx, nodeName)
+		err = client.PostDrain(ctx, node.Name)
 		if err != nil {
 			lp.Debug("Plugin PostDrain failed", zap.Error(err))
-			return errors.Wrapf(err, "failed PostDrain on plugin: %s", id)
+			d.recorder.Eventf(node, corev1.EventTypeWarning, "PostDrain", "PostDrain failed for %s: %v", id, err)
+			return fmt.Errorf("failed PostDrain on plugin: %s %w", id, err)
 		}
 		lp.Debug("Plugin PostDrain succeeded without errors")
 	}
+	d.recorder.Eventf(node, corev1.EventTypeNormal, "PostDrain", "Node PostDrain succeeded")
 	return nil
 }
 
@@ -338,7 +387,7 @@ func (d *DrainManager) pluginOutputMonitor(streamName string, l *zap.Logger, plu
 
 			if !addedPluginId {
 				if id, ok := d.pluginFileId[pluginFile]; ok {
-					l = l.With(zap.String("plugin.id", id))
+					l = l.With(zap.String(config.LogPluginId, id))
 					addedPluginId = true
 				}
 			}
@@ -366,4 +415,8 @@ func (d *DrainManager) pluginOutputMonitor(streamName string, l *zap.Logger, plu
 	}()
 
 	return writer
+}
+
+func pluginEventError(id string, err error) string {
+	return fmt.Sprintf("%s: Error: %s", id, err.Error())
 }

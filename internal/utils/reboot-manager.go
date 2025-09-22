@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pkg/errors"
+	drainv1 "github.com/slyngdk/node-drain/api/v1"
 	"github.com/slyngdk/node-drain/internal/config"
 	mod "github.com/slyngdk/node-drain/internal/modules"
 	"go.uber.org/zap"
@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -27,9 +28,10 @@ type RebootManager struct {
 	client    client.Client
 	clientSet *kubernetes.Clientset
 	config    *rest.Config
+	recorder  record.EventRecorder
 }
 
-func NewRebootManager(l *zap.Logger, client client.Client, restConfig *rest.Config, namespace string) (*RebootManager, error) {
+func NewRebootManager(l *zap.Logger, client client.Client, restConfig *rest.Config, recorder record.EventRecorder, namespace string) (*RebootManager, error) {
 	clientSet, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
 		return nil, err
@@ -40,6 +42,7 @@ func NewRebootManager(l *zap.Logger, client client.Client, restConfig *rest.Conf
 		client:    client,
 		clientSet: clientSet,
 		config:    restConfig,
+		recorder:  recorder,
 	}, nil
 }
 
@@ -50,23 +53,23 @@ func (r *RebootManager) IsRebootRequired(ctx context.Context, nodeName string) (
 
 	pod, err := r.clientSet.CoreV1().Pods(r.namespace).Create(ctx, r.rebootRequiredPod(nodeName), metav1.CreateOptions{})
 	if err != nil {
-		return false, errors.Wrap(err, "failed to create reboot-required pod")
+		return false, fmt.Errorf("failed to create reboot-required pod: %w", err)
 	}
 	defer func() {
 		err := r.clientSet.CoreV1().Pods(r.namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
 		if err != nil {
-			r.l.Error("failed to delete pod", zap.String("node.name", nodeName), zap.Error(err))
+			r.l.Error("failed to delete pod", zap.String(config.LogNodeName, nodeName), zap.Error(err))
 		}
 	}()
 
 	err = wait.PollUntilContextTimeout(ctx, time.Second, 30*time.Second, false, mod.IsPodRunning(r.clientSet, pod.GetName(), pod.GetNamespace()))
 	if err != nil {
-		return false, errors.Wrap(err, "pod did not complete while waiting")
+		return false, fmt.Errorf("pod did not complete while waiting: %w", err)
 	}
 
 	pod, err = r.clientSet.CoreV1().Pods(pod.GetNamespace()).Get(ctx, pod.GetName(), metav1.GetOptions{})
 	if err != nil {
-		return false, errors.Wrap(err, "failed to get reboot-required pod")
+		return false, fmt.Errorf("failed to get reboot-required pod: %w", err)
 	}
 
 	rebootRequired := false
@@ -78,7 +81,7 @@ func (r *RebootManager) IsRebootRequired(ctx context.Context, nodeName string) (
 		Namespace: pod.Namespace,
 		Name:      pod.Name,
 	}, command, nil, stdout, stderr)
-	r.l.Debug("reboot-required pod output", zap.String("node.name", nodeName), zap.String("stdout", stdout.String()), zap.String("stderr", stderr.String()), zap.Error(err))
+	r.l.Debug("reboot-required pod output", zap.String(config.LogNodeName, nodeName), zap.String("stdout", stdout.String()), zap.String("stderr", stderr.String()), zap.Error(err))
 	if err == nil {
 		rebootRequired = true
 	}
@@ -135,24 +138,27 @@ func (r *RebootManager) rebootRequiredPod(nodeName string) *corev1.Pod {
 	}
 }
 
-func (r *RebootManager) RebootNode(ctx context.Context, nodeName string) error {
-	node := mod.GetNode(ctx, r.clientSet, nodeName)
-	if node == nil {
-		return fmt.Errorf("node don't exists in cluster: %s", nodeName)
+func (r *RebootManager) RebootNode(ctx context.Context, node *drainv1.Node) error {
+	kubeNode := mod.GetNode(ctx, r.clientSet, node.Name)
+	if kubeNode == nil {
+		return fmt.Errorf("node don't exists in cluster: %s", node.Name)
 	}
 
-	if !node.Spec.Unschedulable {
-		return fmt.Errorf("node needs to cordoned before reboot: %s", nodeName)
+	if !kubeNode.Spec.Unschedulable {
+		return fmt.Errorf("node needs to be cordoned before reboot: %s", node.Name)
 	}
 
 	if config.GetConfig().ContainerNode {
-		r.l.Info("Skipping reboot, because running on containers", zap.String("node.name", nodeName))
+		r.recorder.Eventf(node, corev1.EventTypeNormal, "Reboot", "Skipping reboot, because running on containers")
+		r.l.Info("Skipping reboot, because running on containers", zap.String(config.LogNodeName, node.Name))
 		return nil
 	}
 
-	_, err := r.clientSet.CoreV1().Pods(r.namespace).Create(ctx, r.rebootNodePod(nodeName), metav1.CreateOptions{})
+	r.recorder.Eventf(node, corev1.EventTypeNormal, "Reboot", "Rebooting node")
+	_, err := r.clientSet.CoreV1().Pods(r.namespace).Create(ctx, r.rebootNodePod(node.Name), metav1.CreateOptions{})
 	if err != nil {
-		return errors.Wrap(err, "failed to create reboot pod")
+		r.recorder.Eventf(node, corev1.EventTypeNormal, "Reboot", "Failed to create reboot pod: %v", err)
+		return fmt.Errorf("failed to create reboot pod: %w", err)
 	}
 
 	return nil
@@ -200,7 +206,7 @@ func (r *RebootManager) rebootNodePod(nodeName string) *corev1.Pod {
 
 func (r *RebootManager) IsNodeRebooted(ctx context.Context, kubeNode *corev1.Node, oldBootId string) (bool, error) {
 	if config.GetConfig().ContainerNode {
-		r.l.Info("Node was not rebooted, because running on containers", zap.String("node.name", kubeNode.Name))
+		r.l.Info("Node was not rebooted, because running on containers", zap.String(config.LogNodeName, kubeNode.Name))
 		pod := r.rebootRequiredPod(kubeNode.Name)
 		pod.GenerateName = "reboot-required-remove-"
 		pod.Spec.Containers[0].Command = []string{"rm", "-f", "/host/var/run/reboot-required"}
@@ -210,18 +216,18 @@ func (r *RebootManager) IsNodeRebooted(ctx context.Context, kubeNode *corev1.Nod
 
 		pod, err := r.clientSet.CoreV1().Pods(r.namespace).Create(ctx, pod, metav1.CreateOptions{})
 		if err != nil {
-			return false, errors.Wrap(err, "failed to create reboot-required-remove pod")
+			return false, fmt.Errorf("failed to create reboot-required-remove pod: %w", err)
 		}
 		defer func() {
 			err := r.clientSet.CoreV1().Pods(r.namespace).Delete(ctx, pod.Name, metav1.DeleteOptions{})
 			if err != nil {
-				r.l.Error("failed to delete pod", zap.String("node.name", kubeNode.Name), zap.Error(err))
+				r.l.Error("failed to delete pod", zap.String(config.LogNodeName, kubeNode.Name), zap.Error(err))
 			}
 		}()
 
 		err = wait.PollUntilContextTimeout(ctx, time.Second, 30*time.Second, false, mod.IsPodCompleted(r.clientSet, pod.GetName(), pod.GetNamespace()))
 		if err != nil {
-			return false, errors.Wrap(err, "pod did not complete while waiting")
+			return false, fmt.Errorf("pod did not complete while waiting: %w", err)
 		}
 
 		return true, nil
@@ -264,7 +270,7 @@ func (r *RebootManager) CleanupNode(ctx context.Context, nodeName string) error 
 
 	err = r.clientSet.CoreV1().Pods(r.namespace).DeleteCollection(ctx, metav1.DeleteOptions{}, options)
 	if err != nil {
-		return errors.Wrap(err, "failed to delete pods")
+		return fmt.Errorf("failed to delete pods: %w", err)
 	}
 	return nil
 }
