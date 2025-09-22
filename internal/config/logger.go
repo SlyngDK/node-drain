@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/fatih/color"
-	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -19,7 +18,7 @@ const TraceLevel = zapcore.DebugLevel - 1
 func GetLogger(logLevel, logFormat string) (*zap.Logger, error) {
 	level, err := zap.ParseAtomicLevel(logLevel)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse log level")
+		return nil, fmt.Errorf("failed to parse log level: %w", err)
 	}
 
 	disableStackTrace := true
@@ -60,7 +59,7 @@ func GetLogger(logLevel, logFormat string) (*zap.Logger, error) {
 	logger, err := loggerConfig.Build()
 
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build logger")
+		return nil, fmt.Errorf("failed to build logger: %w", err)
 	}
 	setLoggerConfig(&loggerConfig)
 	return logger, nil

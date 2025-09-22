@@ -87,13 +87,13 @@ func NewNodeReconciler(ctx context.Context, client client.Client, schema *runtim
 		return nil, err
 	}
 
-	rebootManager, err := utils.NewRebootManager(l, client, restConfig, managerNamespace)
+	rebootManager, err := utils.NewRebootManager(l, client, restConfig, recorder, managerNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create reboot manager: %w", err)
 	}
 	_ = rebootManager.CleanupNode(ctx, "")
 
-	drainManager, err := utils.NewDrainManager(ctx, client, restConfig)
+	drainManager, err := utils.NewDrainManager(ctx, client, restConfig, recorder)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create drain manager: %w", err)
 	}
@@ -282,7 +282,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 				}
 
 				l.Info("Rebooting node")
-				err = r.rebootManager.RebootNode(ctx, node.Name)
+				err = r.rebootManager.RebootNode(ctx, node)
 				if err != nil {
 					return ctrl.Result{}, err
 				}
@@ -314,6 +314,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 					if err != nil {
 						return ctrl.Result{}, err
 					}
+					r.recorder.Eventf(node, corev1.EventTypeNormal, "Reboot", "Node Rebooted")
 					return ctrl.Result{RequeueAfter: time.Second}, nil
 				} else {
 					l.Info("Node not ready yet after reboot")
@@ -472,7 +473,7 @@ func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1
 	if node.Status.CurrentState == drainv1.NodeCurrentStateNext {
 
 		// Check if cluster is healthy before starting drain
-		healthy, err := r.drainManager.IsHealthy(ctx)
+		healthy, err := r.drainManager.IsHealthy(ctx, node)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check if cluster is healthy: %w", err)
 		}
@@ -481,7 +482,7 @@ func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1
 		}
 
 		// Check if drain of node is ok
-		drainOk, err := r.drainManager.IsDrainOk(ctx, node.Name)
+		drainOk, err := r.drainManager.IsDrainOk(ctx, node)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check if node(%s) is ok to drain: %w", node.Name, err)
 		}
@@ -512,7 +513,7 @@ func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1
 	}
 
 	// Run Plugin PreDrain
-	err := r.drainManager.RunPreDrain(ctx, node.Name)
+	err := r.drainManager.RunPreDrain(ctx, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to run plugin PreDrain for node(%s): %w", node.Name, err)
 	}
@@ -568,6 +569,7 @@ func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1
 		return nil, fmt.Errorf("failed to update drained status on node: %w", err)
 	}
 
+	r.recorder.Eventf(node, corev1.EventTypeNormal, "Drained", "Node drained successfully")
 	return nil, nil
 }
 
@@ -589,7 +591,7 @@ func (r *nodeReconciler) undrain(ctx context.Context, l *zap.Logger, node *drain
 			}
 		}
 
-		if err := r.drainManager.RunPostDrain(ctx, node.Name); err != nil {
+		if err := r.drainManager.RunPostDrain(ctx, node); err != nil {
 			l.Warn("failed to run PostDrain for node", zap.Error(err))
 			return false, ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
@@ -606,6 +608,7 @@ func (r *nodeReconciler) undrain(ctx context.Context, l *zap.Logger, node *drain
 			return false, ctrl.Result{}, err
 		}
 
+		r.recorder.Eventf(node, corev1.EventTypeNormal, "Undrain", "Undrained successfully")
 		return true, ctrl.Result{}, nil
 	}
 
