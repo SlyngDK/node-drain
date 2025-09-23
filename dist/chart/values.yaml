@@ -40,6 +40,24 @@ controllerManager:
   terminationGracePeriodSeconds: 10
   serviceAccountName: nodedrain-controller-manager
 
+# Nodedrain configuration supports multiple keys/files, is mapped to a secret.
+#config:
+#  config.yaml: |
+#    log:
+#      loggers:
+#        node:
+#          level: debug
+#        node-webhook:
+#          level: debug
+#        drain-plugin-client:
+#          level: debug
+#    reboot:
+#      checkInterval: 5m
+#
+#    plugins:
+#      example-plugin:
+#        key: value
+
 # Plugin container is started as a initContainer and expecting plugins to be copied to `/plugins/*.so`
 #plugins:
 #  - name: example-plugin

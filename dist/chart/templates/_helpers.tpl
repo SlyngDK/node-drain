@@ -57,3 +57,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- print (required "An image repository is required" .Values.controllerManager.container.image.repository) ":" $tag -}}
 {{- end -}}
+
+{{- define "chart.hasConfig" -}}
+{{ gt (keys (default .Values.config dict) | len) 0 }}
+{{- end -}}
