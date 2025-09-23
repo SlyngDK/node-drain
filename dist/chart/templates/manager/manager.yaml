@@ -16,6 +16,9 @@ spec:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
+        {{- if eq (include "chart.hasConfig" .) "true" }}
+        checksum/config: {{ include (print $.Template.BasePath "/manager/config.yaml") . | sha256sum }}
+        {{- end }}
       labels:
         {{- include "chart.labels" . | nindent 8 }}
         control-plane: controller-manager
@@ -25,7 +28,7 @@ spec:
         {{- end }}
         {{- end }}
     spec:
-      {{- if gt (len .Values.plugins) 0}}
+      {{- if gt (len .Values.plugins) 0 }}
       initContainers:
         {{- range .Values.plugins }}
         - name: {{ required "Name is required" .name }}
@@ -106,10 +109,16 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.controllerManager.terminationGracePeriodSeconds }}
       {{- if and .Values.certmanager.enable (or .Values.webhook.enable .Values.metrics.enable) }}
       volumes:
+        {{- if eq (include "chart.hasConfig" .) "true" }}
+        - name: config
+          secret:
+            secretName: nodedrain-controller-manager-config
+        {{- else }}
         - name: config
           secret:
             secretName: nodedrain-config
             optional: true
+        {{- end }}
         - name: plugins
           emptyDir:
             sizeLimit: 1G

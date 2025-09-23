@@ -1,0 +1,10 @@
+{{- if eq (include "chart.hasConfig" .) "true" -}}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nodedrain-controller-manager-config
+  namespace: {{ .Release.Namespace }}
+  labels: {{ include "chart.labels" . | nindent 4 }}
+stringData: {{ .Values.config | toYaml | nindent 2 }}
+{{- end -}}
