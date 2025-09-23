@@ -14,6 +14,7 @@ runs:
         echo "IMG_NAME_EXAM_PLUGIN=nodedrain-example-plugin" >> $GITHUB_ENV
         echo "BRANCH_NAME=${{ github.head_ref || github.ref_name }}" >> $GITHUB_ENV
         echo "BRANCH_NAME_HASH=$(echo -n ${{ github.head_ref || github.ref_name }} | md5sum | cut -d" " -f1 -z)" >> $GITHUB_ENV
+        echo "BRANCH_MAIN_HASH=$(echo -n main | md5sum | cut -d" " -f1 -z)" >> $GITHUB_ENV
 
     - shell: bash
       if: (github.ref == 'refs/heads/main' || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && !env.ACT
@@ -23,8 +24,8 @@ runs:
     - shell: bash
       if: inputs.docker_cache_enabled == 'true'
       run: |
-        echo "DOCKER_BUILD_OPTIONS_CONTROLLER=--cache-to type=gha,mode=max,scope=controller-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=controller-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=controller-main" >> $GITHUB_ENV
-        echo "DOCKER_BUILD_OPTIONS_EXAM_PLUGIN=--cache-to type=gha,mode=max,scope=example-plugin-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=example-plugin-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=example-plugin-main" >> $GITHUB_ENV
+        echo "DOCKER_BUILD_OPTIONS_CONTROLLER=--cache-to type=gha,mode=max,scope=controller-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=controller-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=controller-${{ env.BRANCH_MAIN_HASH }}" >> $GITHUB_ENV
+        echo "DOCKER_BUILD_OPTIONS_EXAM_PLUGIN=--cache-to type=gha,mode=max,scope=example-plugin-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=example-plugin-${{ env.BRANCH_NAME_HASH }} --cache-from type=gha,scope=example-plugin-${{ env.BRANCH_MAIN_HASH }}" >> $GITHUB_ENV
 
     - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       if: inputs.docker_cache_enabled == 'true'
@@ -48,7 +49,7 @@ runs:
         key: ${{ runner.os }}-go-build-cache-${{ env.BRANCH_NAME_HASH }}-${{ steps.context-hash.outputs.hash }}
         restore-keys: |
           ${{ runner.os }}-go-build-cache-${{ env.BRANCH_NAME_HASH }}-
-          ${{ runner.os }}-go-build-cache-main-
+          ${{ runner.os }}-go-build-cache-${{ env.BRANCH_MAIN_HASH }}-
 
     - name: Restore Docker cache mounts
       uses: reproducible-containers/buildkit-cache-dance@5b81f4d29dc8397a7d341dba3aeecc7ec54d6361 #v3.3.0
