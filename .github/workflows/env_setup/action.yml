@@ -46,10 +46,9 @@ runs:
       id: cache
       with:
         path: go-build-cache
-        key: ${{ runner.os }}-go-build-cache-${{ env.BRANCH_NAME_HASH }}-${{ steps.context-hash.outputs.hash }}
+        key: ${{ runner.os }}-go-build-cache-${{ steps.context-hash.outputs.hash }}
         restore-keys: |
-          ${{ runner.os }}-go-build-cache-${{ env.BRANCH_NAME_HASH }}-
-          ${{ runner.os }}-go-build-cache-${{ env.BRANCH_MAIN_HASH }}-
+          ${{ runner.os }}-go-build-cache-
 
     - name: Restore Docker cache mounts
       uses: reproducible-containers/buildkit-cache-dance@5b81f4d29dc8397a7d341dba3aeecc7ec54d6361 #v3.3.0
