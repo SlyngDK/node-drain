@@ -182,9 +182,8 @@ func (r *RebootManager) rebootNodePod(nodeName string) *corev1.Pod {
 				Operator: corev1.TolerationOpExists,
 				Effect:   corev1.TaintEffectNoSchedule,
 			}},
-			HostPID:                       true, // Facilitate entering the host mount namespace via init
-			TerminationGracePeriodSeconds: PtrTo(int64(1)),
-			NodeName:                      nodeName,
+			HostPID:  true, // Facilitate entering the host mount namespace via init
+			NodeName: nodeName,
 			Containers: []corev1.Container{{
 				Name:    "shell",
 				Image:   "alpine",
@@ -241,6 +240,9 @@ func (r *RebootManager) IsNodeRebooted(ctx context.Context, kubeNode *corev1.Nod
 					nodeReady = true
 				}
 			}
+		}
+		if err := r.CleanupNode(ctx, kubeNode.Name); err != nil {
+			return false, fmt.Errorf("failed to cleanup node after reboot: %w", err)
 		}
 		return nodeReady, nil
 	}
