@@ -91,7 +91,6 @@ func NewNodeReconciler(ctx context.Context, client client.Client, schema *runtim
 	if err != nil {
 		return nil, fmt.Errorf("failed to create reboot manager: %w", err)
 	}
-	_ = rebootManager.CleanupNode(ctx, "")
 
 	drainManager, err := utils.NewDrainManager(ctx, client, restConfig, recorder)
 	if err != nil {
@@ -164,9 +163,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			// Create node as it is missing
 			return r.createNewNode(ctx, kubeNode)
 		}
-		if err != nil {
-			l.With(zap.Error(err)).Error("unable to fetch node")
-		}
+		l.With(zap.Error(err)).Error("unable to fetch node")
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
 		// requeue (we'll need to wait for a new notification), and we can get them
 		// on deleted requests.
@@ -220,6 +217,7 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		if err := r.setCurrentState(ctx, l, node, drainv1.NodeCurrentStateOk); err != nil {
 			return ctrl.Result{}, err
 		}
+		_ = r.rebootManager.CleanupNode(ctx, node.Name)
 	case drainv1.NodeStateCordoned:
 		if err := r.setUnschedulable(ctx, kubeNode, true); err != nil {
 			return ctrl.Result{}, err
@@ -335,11 +333,6 @@ func (r *nodeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		}
 	}
 
-	err := r.rebootManager.Cleanup(ctx)
-	if err != nil {
-		l.Warn("Failed to cleanup reboot pods", zap.Error(err))
-	}
-
 	return ctrl.Result{}, nil
 }
 
@@ -431,6 +424,10 @@ func (r *nodeReconciler) setBootID(ctx context.Context, node *drainv1.Node, kube
 }
 
 func (r *nodeReconciler) checkRebootRequired(ctx context.Context, node *drainv1.Node, l *zap.Logger) error {
+	// Only check if reboot is required, when not doing work
+	if node.Status.CurrentState.WorkState() {
+		return nil
+	}
 	rebootCheckInterval := config.GetKoanf().Duration("reboot.checkInterval")
 	if rebootCheckInterval < 5*time.Minute {
 		rebootCheckInterval = 24 * time.Hour
@@ -538,10 +535,6 @@ func (r *nodeReconciler) drain(ctx context.Context, l *zap.Logger, node *drainv1
 		Out:                 stdout,
 		ErrOut:              stderr,
 	}
-
-	// if dryRun {
-	//	drainHelper.DryRunStrategy = cmdutil.DryRunServer
-	// }
 
 	l.Info("draining node")
 

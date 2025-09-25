@@ -7,21 +7,38 @@ linters:
     - copyloopvar
     - dupl
     - errcheck
+    - forbidigo
     - ginkgolinter
     - goconst
     - gocyclo
     - govet
+    - iface
     - ineffassign
     - lll
+    - loggercheck
     - misspell
     - nakedret
     - prealloc
     - revive
     - staticcheck
+    - testifylint
     - unconvert
     - unparam
     - unused
+    - wastedassign
   settings:
+    govet:
+      enable-all: true
+      disable:
+        - shadow
+        - fieldalignment
+    loggercheck:
+      klog: true
+      logr: true
+      slog: true
+      zap: true
+      no-printf-like: true
+      require-string-key: true
     revive:
       rules:
         - name: comment-spacings
