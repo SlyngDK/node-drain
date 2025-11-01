@@ -30,7 +30,7 @@ COPY examples/ examples/
 RUN --mount=type=cache,target=/root/.cache \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -o example-plugin.so examples/plugin/example-plugin.go
 
-FROM alpine:3.22.1 AS example-plugin
+FROM alpine:3.22.2 AS example-plugin
 WORKDIR /
 COPY --from=builder-plugin /workspace/example-plugin.so .
 USER 65532:65532
