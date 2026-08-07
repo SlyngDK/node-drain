@@ -10,6 +10,7 @@ import (
 	"github.com/slyngdk/node-drain/internal/config"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
@@ -46,11 +47,12 @@ func NewRebootManager(l *zap.Logger, client client.Client, restConfig *rest.Conf
 }
 
 func (r *RebootManager) IsRebootRequired(ctx context.Context, nodeName string) (bool, error) {
-	if GetNode(ctx, r.clientSet, nodeName) == nil {
+	kubeNode := GetNode(ctx, r.clientSet, nodeName)
+	if kubeNode == nil {
 		return false, fmt.Errorf("node don't exists in cluster: %s", nodeName)
 	}
 
-	pod, err := r.clientSet.CoreV1().Pods(r.namespace).Create(ctx, r.rebootRequiredPod(nodeName), metav1.CreateOptions{})
+	pod, err := r.clientSet.CoreV1().Pods(r.namespace).Create(ctx, r.rebootRequiredPod(kubeNode), metav1.CreateOptions{})
 	if err != nil {
 		return false, fmt.Errorf("failed to create reboot-required pod: %w", err)
 	}
@@ -88,13 +90,14 @@ func (r *RebootManager) IsRebootRequired(ctx context.Context, nodeName string) (
 	return rebootRequired, nil
 }
 
-func (r *RebootManager) rebootRequiredPod(nodeName string) *corev1.Pod {
+func (r *RebootManager) rebootRequiredPod(kubeNode *corev1.Node) *corev1.Pod {
 	userId := int64(1000)
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "reboot-required-",
-			Namespace:    r.namespace,
-			Labels:       map[string]string{LabelComponent: "reboot-required"},
+			GenerateName:    "reboot-required-",
+			Namespace:       r.namespace,
+			Labels:          map[string]string{LabelComponent: "reboot-required"},
+			OwnerReferences: nodeOwnerReference(kubeNode),
 		},
 		Spec: corev1.PodSpec{
 			Volumes: []corev1.Volume{{
@@ -107,9 +110,10 @@ func (r *RebootManager) rebootRequiredPod(nodeName string) *corev1.Pod {
 				},
 			}},
 			Containers: []corev1.Container{{
-				Name:    "shell",
-				Image:   "alpine",
-				Command: []string{"sleep", "300"},
+				Name:      "shell",
+				Image:     "alpine",
+				Command:   []string{"sleep", "300"},
+				Resources: utilityPodResources(),
 				VolumeMounts: []corev1.VolumeMount{{
 					Name:      "host-var-run",
 					ReadOnly:  true,
@@ -118,7 +122,8 @@ func (r *RebootManager) rebootRequiredPod(nodeName string) *corev1.Pod {
 			}},
 			RestartPolicy:                 "Never",
 			TerminationGracePeriodSeconds: PtrTo(int64(1)),
-			NodeName:                      nodeName,
+			Affinity:                      nodeNameAffinity(kubeNode.Name),
+			PriorityClassName:             utilityPodPriorityClassName(),
 			SecurityContext: &corev1.PodSecurityContext{
 				RunAsUser:    &userId,
 				RunAsGroup:   &userId,
@@ -154,7 +159,7 @@ func (r *RebootManager) RebootNode(ctx context.Context, node *drainv1.Node) erro
 	}
 
 	r.recorder.Eventf(node, corev1.EventTypeNormal, "Reboot", "Rebooting node")
-	_, err := r.clientSet.CoreV1().Pods(r.namespace).Create(ctx, r.rebootNodePod(node.Name), metav1.CreateOptions{})
+	_, err := r.clientSet.CoreV1().Pods(r.namespace).Create(ctx, r.rebootNodePod(kubeNode), metav1.CreateOptions{})
 	if err != nil {
 		r.recorder.Eventf(node, corev1.EventTypeWarning, "Reboot", "Failed to create reboot pod: %v", err)
 		return fmt.Errorf("failed to create reboot pod: %w", err)
@@ -163,13 +168,13 @@ func (r *RebootManager) RebootNode(ctx context.Context, node *drainv1.Node) erro
 	return nil
 }
 
-func (r *RebootManager) rebootNodePod(nodeName string) *corev1.Pod {
+func (r *RebootManager) rebootNodePod(kubeNode *corev1.Node) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "reboot-",
-			Namespace:    r.namespace,
-			Labels:       map[string]string{LabelComponent: "reboot"},
-			Annotations:  map[string]string{"container.apparmor.security.beta.kubernetes.io/shell": "unconfined"},
+			GenerateName:    "reboot-",
+			Namespace:       r.namespace,
+			Labels:          map[string]string{LabelComponent: "reboot"},
+			OwnerReferences: nodeOwnerReference(kubeNode),
 		},
 		Spec: corev1.PodSpec{
 			Tolerations: []corev1.Toleration{{
@@ -181,12 +186,14 @@ func (r *RebootManager) rebootNodePod(nodeName string) *corev1.Pod {
 				Operator: corev1.TolerationOpExists,
 				Effect:   corev1.TaintEffectNoSchedule,
 			}},
-			HostPID:  true, // Facilitate entering the host mount namespace via init
-			NodeName: nodeName,
+			HostPID:           true, // Facilitate entering the host mount namespace via init
+			Affinity:          nodeNameAffinity(kubeNode.Name),
+			PriorityClassName: utilityPodPriorityClassName(),
 			Containers: []corev1.Container{{
-				Name:    "shell",
-				Image:   "alpine",
-				Command: []string{"kill", "-39", "1"}, // kill -SIGRTMIN+5 1 - telling systemd to reboot
+				Name:      "shell",
+				Image:     "alpine",
+				Command:   []string{"kill", "-39", "1"}, // kill -SIGRTMIN+5 1 - telling systemd to reboot
+				Resources: utilityPodResources(),
 				SecurityContext: &corev1.SecurityContext{
 					Capabilities: &corev1.Capabilities{
 						// Drop: []corev1.Capability{"*"},
@@ -195,9 +202,66 @@ func (r *RebootManager) rebootNodePod(nodeName string) *corev1.Pod {
 					AllowPrivilegeEscalation: PtrTo(false),
 					Privileged:               PtrTo(false),
 					ReadOnlyRootFilesystem:   PtrTo(true),
+					AppArmorProfile: &corev1.AppArmorProfile{
+						Type: corev1.AppArmorProfileTypeUnconfined,
+					},
 				},
 			}},
 			RestartPolicy: "Never",
+		},
+	}
+}
+
+// nodeOwnerReference marks the utility pod as controlled by its target node,
+// like kubelet mirror pods. This lets the drain helper evict a leftover pod
+// (it refuses pods that declare no controller) and garbage-collects pods for
+// deleted nodes.
+func nodeOwnerReference(kubeNode *corev1.Node) []metav1.OwnerReference {
+	return []metav1.OwnerReference{{
+		APIVersion: "v1",
+		Kind:       "Node",
+		Name:       kubeNode.Name,
+		UID:        kubeNode.UID,
+		Controller: PtrTo(true),
+	}}
+}
+
+// nodeNameAffinity pins the pod to a node through the scheduler instead of
+// spec.nodeName. Bypassing the scheduler skips preemption, so on a node at
+// max-pods capacity the kubelet rejects the pod outright (OutOfpods) even
+// when it has priority to preempt.
+func nodeNameAffinity(nodeName string) *corev1.Affinity {
+	return &corev1.Affinity{
+		NodeAffinity: &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+					MatchFields: []corev1.NodeSelectorRequirement{{
+						Key:      "metadata.name",
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{nodeName},
+					}},
+				}},
+			},
+		},
+	}
+}
+
+func utilityPodPriorityClassName() string {
+	if c := config.GetConfig(); c != nil {
+		return c.Reboot.PodPriorityClassName
+	}
+	return ""
+}
+
+func utilityPodResources() corev1.ResourceRequirements {
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("16Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("32Mi"),
 		},
 	}
 }
@@ -206,7 +270,7 @@ func (r *RebootManager) IsNodeRebooted(ctx context.Context, kubeNode *corev1.Nod
 	l := r.l.With(zap.String(config.LogNodeName, kubeNode.Name))
 	if config.GetConfig().ContainerNode {
 		l.Info("Node was not rebooted, because running on containers")
-		pod := r.rebootRequiredPod(kubeNode.Name)
+		pod := r.rebootRequiredPod(kubeNode)
 		pod.GenerateName = "reboot-required-remove-"
 		pod.Spec.Containers[0].Command = []string{"rm", "-f", "/host/var/run/reboot-required"}
 		pod.Spec.Containers[0].VolumeMounts[0].ReadOnly = false

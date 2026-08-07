@@ -36,6 +36,9 @@ type Config struct {
 	} `koanf:"log"`
 	Reboot struct {
 		CheckInterval time.Duration `koanf:"checkInterval"`
+		// PodPriorityClassName is set on the reboot-required and reboot pods,
+		// so they can preempt lower-priority pods on nodes at max-pods capacity.
+		PodPriorityClassName string `koanf:"podPriorityClassName"`
 	}
 	ContainerNode bool `koanf:"containerNode"`
 }
