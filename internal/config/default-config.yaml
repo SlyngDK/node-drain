@@ -4,3 +4,4 @@ log:
   format: json
 reboot:
   checkInterval: 12h
+  podPriorityClassName: ""
