@@ -4,3 +4,11 @@ log:
   format: json
 reboot:
   checkInterval: 12h
+pod:
+  containerResources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 100m
+      memory: 32Mi

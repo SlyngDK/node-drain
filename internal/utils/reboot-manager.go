@@ -115,6 +115,7 @@ func (r *RebootManager) rebootRequiredPod(nodeName string) *corev1.Pod {
 					ReadOnly:  true,
 					MountPath: "/host/var/run",
 				}},
+				Resources: config.GetConfig().Pod.ContainerResources.ToResourceRequirement(),
 			}},
 			RestartPolicy:                 "Never",
 			TerminationGracePeriodSeconds: PtrTo(int64(1)),
@@ -133,6 +134,7 @@ func (r *RebootManager) rebootRequiredPod(nodeName string) *corev1.Pod {
 				Operator: corev1.TolerationOpExists,
 				Effect:   corev1.TaintEffectNoSchedule,
 			}},
+			PriorityClassName: config.GetConfig().Pod.PriorityClassName,
 		},
 	}
 }
@@ -169,7 +171,6 @@ func (r *RebootManager) rebootNodePod(nodeName string) *corev1.Pod {
 			GenerateName: "reboot-",
 			Namespace:    r.namespace,
 			Labels:       map[string]string{LabelComponent: "reboot"},
-			Annotations:  map[string]string{"container.apparmor.security.beta.kubernetes.io/shell": "unconfined"},
 		},
 		Spec: corev1.PodSpec{
 			Tolerations: []corev1.Toleration{{
@@ -196,8 +197,15 @@ func (r *RebootManager) rebootNodePod(nodeName string) *corev1.Pod {
 					Privileged:               PtrTo(false),
 					ReadOnlyRootFilesystem:   PtrTo(true),
 				},
+				Resources: config.GetConfig().Pod.ContainerResources.ToResourceRequirement(),
 			}},
-			RestartPolicy: "Never",
+			RestartPolicy:     "Never",
+			PriorityClassName: config.GetConfig().Pod.PriorityClassName,
+			SecurityContext: &corev1.PodSecurityContext{
+				AppArmorProfile: &corev1.AppArmorProfile{
+					Type: corev1.AppArmorProfileTypeUnconfined,
+				},
+			},
 		},
 	}
 }
