@@ -53,6 +53,15 @@ controllerManager:
 #          level: debug
 #    reboot:
 #      checkInterval: 5m
+#    pod:
+#      podPriorityClassName: ""
+#      containerResources:
+#        requests:
+#          cpu: 10m
+#          memory: 16Mi
+#        limits:
+#          cpu: 100m
+#          memory: 32Mi
 #
 #    plugins:
 #      example-plugin:

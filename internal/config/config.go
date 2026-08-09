@@ -16,6 +16,8 @@ import (
 	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/knadh/koanf/v2"
 	pluginv1 "github.com/slyngdk/node-drain/api/plugins/proto/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 //go:embed default-config.yaml
@@ -37,7 +39,43 @@ type Config struct {
 	Reboot struct {
 		CheckInterval time.Duration `koanf:"checkInterval"`
 	}
+	Pod struct {
+		PriorityClassName  string             `koanf:"priorityClassName"`
+		ContainerResources ContainerResources `koanf:"containerResources"`
+	} `koanf:"pod"`
 	ContainerNode bool `koanf:"containerNode"`
+}
+
+type ContainerResources struct {
+	Requests ResourceList `koanf:"requests"`
+	Limits   ResourceList `koanf:"limits"`
+}
+
+func (c *ContainerResources) ToResourceRequirement() corev1.ResourceRequirements {
+	requirements := corev1.ResourceRequirements{
+		Requests: c.Requests.toKubernetes(),
+		Limits:   c.Limits.toKubernetes(),
+	}
+	return requirements
+}
+
+type ResourceList struct {
+	Memory string `koanf:"memory"`
+	CPU    string `koanf:"cpu"`
+}
+
+func (c *ResourceList) toKubernetes() corev1.ResourceList {
+	if c.CPU != "" && c.Memory != "" {
+		list := corev1.ResourceList{}
+		if c.CPU != "" {
+			list[corev1.ResourceCPU] = resource.MustParse(c.CPU)
+		}
+		if c.Memory != "" {
+			list[corev1.ResourceMemory] = resource.MustParse(c.Memory)
+		}
+		return list
+	}
+	return nil
 }
 
 func (c *Config) GetLogger(name string) Logger {
